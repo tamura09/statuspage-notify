@@ -17,8 +17,6 @@ const (
 	colorNone        = 0x9aa0a6
 
 	truncationSuffix = "..."
-	webhookUsername  = "Claude Status"
-	footerText       = "status.claude.com"
 )
 
 var statusLabels = map[string]string{
@@ -85,16 +83,16 @@ func embedColor(entry statusEntry, update statusUpdate) int {
 //
 // openThread makes it the forum post that starts the entry's thread; every
 // later update for the same entry is a follow-up inside that thread.
-func buildPayload(entry statusEntry, update statusUpdate, openThread bool, mentionRoleID string) webhookPayload {
+func buildPayload(entry statusEntry, update statusUpdate, openThread bool, current settings) webhookPayload {
 	label := statusLabel(update.Status)
 
 	// The content line is what a push notification previews, so it carries the
 	// status and the entry name rather than leaving them buried in the embed.
 	content := fmt.Sprintf("**%s** — %s", label, entry.Name)
 	mentions := allowedMentions{Parse: []string{}}
-	if mentionRoleID != "" && (openThread || isTerminal(update.Status)) {
-		content = fmt.Sprintf("<@&%s> %s", mentionRoleID, content)
-		mentions.Roles = []string{mentionRoleID}
+	if current.mentionRoleID != "" && (openThread || isTerminal(update.Status)) {
+		content = fmt.Sprintf("<@&%s> %s", current.mentionRoleID, content)
+		mentions.Roles = []string{current.mentionRoleID}
 	}
 
 	rendered := embed{
@@ -102,7 +100,7 @@ func buildPayload(entry statusEntry, update statusUpdate, openThread bool, menti
 		URL:         strings.TrimSpace(entry.Shortlink),
 		Description: truncate(normalizeBody(update.Body), discordEmbedDescriptionLimit),
 		Color:       embedColor(entry, update),
-		Footer:      &embedFooter{Text: truncate(footerText, discordEmbedFooterTextLimit)},
+		Footer:      &embedFooter{Text: truncate(current.pageHost, discordEmbedFooterTextLimit)},
 	}
 	if at := update.at(); !at.IsZero() {
 		rendered.Timestamp = at.UTC().Format(time.RFC3339)
@@ -111,15 +109,24 @@ func buildPayload(entry statusEntry, update statusUpdate, openThread bool, menti
 
 	payload := webhookPayload{
 		Content:         truncate(content, discordContentLimit),
-		Username:        webhookUsername,
+		Username:        webhookUsername(current.pageLabel),
 		Embeds:          []embed{rendered},
 		AllowedMentions: mentions,
 	}
 	if openThread {
-		payload.ThreadName = truncate(threadName(entry), discordThreadNameLimit)
+		payload.ThreadName = truncate(threadName(entry, current.pageLabel), discordThreadNameLimit)
 	}
 
 	return payload
+}
+
+// webhookUsername is what tells two status pages apart when they post into the
+// same channel, so it carries the page label rather than a fixed name.
+func webhookUsername(pageLabel string) string {
+	if pageLabel == "" {
+		return "Status"
+	}
+	return pageLabel + " Status"
 }
 
 func buildFields(entry statusEntry, update statusUpdate) []embedField {
@@ -195,10 +202,10 @@ func componentStatusLabel(status string) string {
 	return strings.ReplaceAll(status, "_", " ")
 }
 
-func threadName(entry statusEntry) string {
+func threadName(entry statusEntry, pageLabel string) string {
 	name := strings.TrimSpace(entry.Name)
 	if name == "" {
-		name = "Claude status update"
+		name = "Status update"
 	}
 	if entry.Kind == kindMaintenance {
 		name = "Maintenance: " + name
@@ -207,6 +214,13 @@ func threadName(entry statusEntry) string {
 	// Statuspage title are otherwise indistinguishable in the channel list.
 	if !entry.CreatedAt.IsZero() {
 		name = entry.CreatedAt.UTC().Format("2006-01-02") + " " + name
+	}
+	// Prefixed with the page, because several status pages can be pointed at
+	// one channel and an incident title rarely names the service it belongs
+	// to: GitHub calls one "Incident with GitHub.com" but another just
+	// "Incident with Actions".
+	if pageLabel != "" {
+		name = pageLabel + " · " + name
 	}
 	return name
 }

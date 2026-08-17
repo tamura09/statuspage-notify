@@ -20,7 +20,13 @@ concurrency:
 env:
   AWS_ACCOUNT_ID: "222165754930"
   AWS_ROLE_TO_ASSUME: "arn:aws:iam::222165754930:role/github-actions-lambda-artifacts"
-  FUNCTION_NAME: claude-status-notify
+  ARTIFACT_NAME: statuspage-notify
+  # One artifact, one Lambda function per status page being watched. Terraform
+  # in tamura09/aws-terraform creates the functions and points them all at the
+  # single S3 object below; each is told which page to poll through its own
+  # environment. Adding a page here without adding it there fails the deploy on
+  # ResourceNotFoundException, which is the intended order: Terraform first.
+  FUNCTION_NAMES: claude-status-notify
 
 jobs:
   test:
@@ -72,7 +78,7 @@ jobs:
       - name: Package artifact
         run: |
           touch -t 202001010000.00 bootstrap
-          zip -X -q "${FUNCTION_NAME}.zip" bootstrap
+          zip -X -q "${ARTIFACT_NAME}.zip" bootstrap
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -82,14 +88,18 @@ jobs:
 
       - name: Upload artifact to S3
         run: |
-          aws s3 cp "${FUNCTION_NAME}.zip" \
-            "s3://aws-terraform-lambda-artifacts-${AWS_ACCOUNT_ID}-us-east-1/lambda/${FUNCTION_NAME}.zip"
+          aws s3 cp "${ARTIFACT_NAME}.zip" \
+            "s3://aws-terraform-lambda-artifacts-${AWS_ACCOUNT_ID}-us-east-1/lambda/${ARTIFACT_NAME}.zip"
 
       - name: Deploy Lambda function code
         run: |
-          aws lambda update-function-code \
-            --function-name "${FUNCTION_NAME}" \
-            --s3-bucket "aws-terraform-lambda-artifacts-${AWS_ACCOUNT_ID}-us-east-1" \
-            --s3-key "lambda/${FUNCTION_NAME}.zip" \
-            --no-cli-pager
-          aws lambda wait function-updated --function-name "${FUNCTION_NAME}"
+          for function in ${FUNCTION_NAMES}; do
+            echo "::group::${function}"
+            aws lambda update-function-code \
+              --function-name "${function}" \
+              --s3-bucket "aws-terraform-lambda-artifacts-${AWS_ACCOUNT_ID}-us-east-1" \
+              --s3-key "lambda/${ARTIFACT_NAME}.zip" \
+              --no-cli-pager
+            aws lambda wait function-updated --function-name "${function}"
+            echo "::endgroup::"
+          done

@@ -90,6 +90,9 @@ func testApp(fake *fakeDiscord) *app {
 
 func testSettings() settings {
 	return settings{
+		baseURL:        "https://status.claude.com/api/v2",
+		pageLabel:      "Claude",
+		pageHost:       "status.claude.com",
 		maxUpdateAge:   24 * time.Hour,
 		stateRetention: defaultStateRetention,
 	}

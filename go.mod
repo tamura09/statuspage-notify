@@ -1,4 +1,4 @@
-module github.com/tamura09/claude-status-notify
+module github.com/tamura09/statuspage-notify
 
 go 1.26.5
 

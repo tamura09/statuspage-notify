@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -17,8 +18,12 @@ import (
 )
 
 const (
+	// Terraform sets STATUS_PAGE_BASE_URL explicitly for every deployment of
+	// this function. This default is only the fallback that keeps the original
+	// Claude deployment pointing at the right page during the window between a
+	// code push and the apply that sets the variable.
 	defaultStatusPageBaseURL = "https://status.claude.com/api/v2"
-	defaultStateKey          = "claude-status/state.json"
+	defaultStateKey          = "statuspage/state.json"
 	defaultMaxUpdateAge      = 24 * time.Hour
 	defaultStateRetention    = 30 * 24 * time.Hour
 )
@@ -31,7 +36,13 @@ type app struct {
 }
 
 type settings struct {
-	baseURL              string
+	baseURL string
+	// pageLabel names the status page in Discord -- the webhook username and
+	// the thread title prefix. Empty is allowed and degrades to an unlabelled
+	// "Status", so a deploy that lands before the label is configured keeps
+	// working rather than failing every minute.
+	pageLabel            string
+	pageHost             string
 	webhookParameterName string
 	stateBucket          string
 	stateKey             string
@@ -143,10 +154,10 @@ func (a *app) deliver(ctx context.Context, webhookURL string, current settings, 
 
 func (a *app) postUpdate(ctx context.Context, webhookURL string, current settings, entry statusEntry, update statusUpdate, threadID string) (webhookMessage, error) {
 	if threadID == "" {
-		return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current.mentionRoleID))
+		return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current))
 	}
 
-	message, err := a.postWebhook(ctx, webhookURL, threadID, buildPayload(entry, update, false, current.mentionRoleID))
+	message, err := a.postWebhook(ctx, webhookURL, threadID, buildPayload(entry, update, false, current))
 	if err == nil {
 		return message, nil
 	}
@@ -161,7 +172,7 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	}
 	log.Printf("thread %s for entry %s is gone; opening a replacement", threadID, entry.ID)
 
-	return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current.mentionRoleID))
+	return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current))
 }
 
 func (a *app) parameterString(ctx context.Context, parameterName string) (string, error) {
@@ -194,8 +205,12 @@ func loadSettings() (settings, error) {
 		return settings{}, err
 	}
 
+	baseURL := envOr("STATUS_PAGE_BASE_URL", defaultStatusPageBaseURL)
+
 	return settings{
-		baseURL:              envOr("STATUS_PAGE_BASE_URL", defaultStatusPageBaseURL),
+		baseURL:              baseURL,
+		pageLabel:            strings.TrimSpace(os.Getenv("PAGE_LABEL")),
+		pageHost:             pageHost(baseURL),
 		webhookParameterName: webhookParameterName,
 		stateBucket:          stateBucket,
 		stateKey:             envOr("STATE_KEY", defaultStateKey),
@@ -203,6 +218,17 @@ func loadSettings() (settings, error) {
 		maxUpdateAge:         maxUpdateAge,
 		stateRetention:       stateRetention,
 	}, nil
+}
+
+// pageHost is what the embed footer shows, so it is the page a reader would
+// visit -- status.claude.com, githubstatus.com -- not the API path underneath
+// it. A "www." prefix is dropped because it says nothing.
+func pageHost(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Host == "" {
+		return strings.TrimSpace(baseURL)
+	}
+	return strings.TrimPrefix(parsed.Host, "www.")
 }
 
 func requiredEnv(name string) (string, error) {
