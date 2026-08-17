@@ -4,13 +4,21 @@ Polls an [Atlassian Statuspage](https://www.atlassian.com/software/statuspage) a
 reports every incident and scheduled maintenance into a Discord **forum** channel,
 one thread per incident.
 
-One binary, one Lambda function per page being watched. Currently deployed twice
-from [tamura09/aws-terraform](https://github.com/tamura09/aws-terraform):
+One binary, one Lambda function per page being watched, all deployed from
+[tamura09/aws-terraform](https://github.com/tamura09/aws-terraform) into the same
+Discord forum channel. Each identifies itself there by its webhook username and
+thread prefix, taken from `PAGE_LABEL`:
 
-| Function | Page | Discord |
+| Function | Page | Posts as |
 | --- | --- | --- |
-| `claude-status-notify` | status.claude.com | shared forum channel, posts as **Claude Status** |
-| `github-status-notify` | githubstatus.com | same channel, posts as **GitHub Status** |
+| `claude-status-notify` | status.claude.com | **Claude Status** |
+| `github-status-notify` | githubstatus.com | **GitHub Status** |
+| `vercel-status-notify` | vercel-status.com | **Vercel Status** |
+| `supabase-status-notify` | status.supabase.com | **Supabase Status** |
+| `ubiquiti-status-notify` | status.ui.com | **Ubiquiti Status** |
+| `cloudflare-status-notify` | cloudflarestatus.com | **Cloudflare Status** |
+| `nature-status-notify` | nature.statuspage.io | **Nature Remo Status** |
+| `mercari-status-notify` | status.mercari.com | **Mercari Status** |
 
 `provided.al2023` / `arm64`, us-east-1, run every minute by EventBridge.
 
@@ -85,14 +93,21 @@ and every member of it can see it — so they sit in the environment.
 
 ## Adding another status page
 
-1. Add a Lambda function in `aws-terraform` pointing at the same artifact, with
-   its own `STATUS_PAGE_BASE_URL`, `PAGE_LABEL` and `STATE_KEY`, plus a log
-   group, EventBridge rule and IAM role. Apply.
-2. Add the function name to `FUNCTION_NAMES` in
+Check it is an Atlassian Statuspage first — `curl -sf <page>/api/v2/incidents.json`
+is the whole test. Then:
+
+1. Add an entry to `statuspage_notify_pages` in `aws-terraform`'s root
+   `locals.tf` (label and API base URL). Everything else — function, role, log
+   group, EventBridge rule, IAM policies, deploy permission — is generated from
+   it. Apply.
+2. Add `<key>-status-notify` to `FUNCTION_NAMES` in
    [.github/workflows/build.yml](.github/workflows/build.yml).
 
 Terraform first: the deploy step fails on `ResourceNotFoundException` if it is
 told to update a function that does not exist yet.
+
+A page's first run posts nothing older than `MAX_UPDATE_AGE`, so adding one does
+not dump its incident history into the channel.
 
 ## Local run
 

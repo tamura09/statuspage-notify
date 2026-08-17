@@ -26,7 +26,15 @@ env:
   # single S3 object below; each is told which page to poll through its own
   # environment. Adding a page here without adding it there fails the deploy on
   # ResourceNotFoundException, which is the intended order: Terraform first.
-  FUNCTION_NAMES: claude-status-notify
+  FUNCTION_NAMES: >-
+    claude-status-notify
+    github-status-notify
+    vercel-status-notify
+    supabase-status-notify
+    ubiquiti-status-notify
+    cloudflare-status-notify
+    nature-status-notify
+    mercari-status-notify
 
 jobs:
   test:
