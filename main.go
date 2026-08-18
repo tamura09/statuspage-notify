@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,11 +155,16 @@ func (a *app) deliver(ctx context.Context, webhookURL string, current settings, 
 
 func (a *app) postUpdate(ctx context.Context, webhookURL string, current settings, entry statusEntry, update statusUpdate, threadID string) (webhookMessage, error) {
 	if threadID == "" {
-		return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current))
+		payload := buildPayload(entry, update, true, current)
+		message, err := a.postWebhook(ctx, webhookURL, "", payload)
+		warnIfMentionDropped(payload, message, err)
+		return message, err
 	}
 
-	message, err := a.postWebhook(ctx, webhookURL, threadID, buildPayload(entry, update, false, current))
+	payload := buildPayload(entry, update, false, current)
+	message, err := a.postWebhook(ctx, webhookURL, threadID, payload)
 	if err == nil {
+		warnIfMentionDropped(payload, message, nil)
 		return message, nil
 	}
 
@@ -172,7 +178,43 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	}
 	log.Printf("thread %s for entry %s is gone; opening a replacement", threadID, entry.ID)
 
-	return a.postWebhook(ctx, webhookURL, "", buildPayload(entry, update, true, current))
+	replacement := buildPayload(entry, update, true, current)
+	message, err = a.postWebhook(ctx, webhookURL, "", replacement)
+	warnIfMentionDropped(replacement, message, err)
+
+	return message, err
+}
+
+// warnIfMentionDropped reports a mention that Discord accepted but did not
+// resolve. That is a silent failure worth shouting about: the message still
+// posts and still shows the mention text, so the channel looks right while
+// nobody is actually notified -- which defeats the reason these updates are
+// posted as new messages rather than edits.
+//
+// The way to land here is to configure MENTION_ROLE_ID with a server id rather
+// than a role id. Discord gives the @everyone role the server's own id, so the
+// mention renders as "@@everyone" and is ignored, because @everyone can only be
+// enabled through allowed_mentions.parse, never through roles.
+func warnIfMentionDropped(payload webhookPayload, message webhookMessage, err error) {
+	if err != nil {
+		return
+	}
+	for _, dropped := range undeliveredMentions(payload, message) {
+		log.Printf("mention of role %s was not delivered: Discord accepted the message but resolved no such role. "+
+			"If that id is the server id, it is the @everyone role, which allowed_mentions.roles cannot enable.", dropped)
+	}
+}
+
+// undeliveredMentions returns the role ids the payload asked to mention that
+// Discord did not report back as mentioned.
+func undeliveredMentions(payload webhookPayload, message webhookMessage) []string {
+	var dropped []string
+	for _, wanted := range payload.AllowedMentions.Roles {
+		if !slices.Contains(message.MentionRoles, wanted) {
+			dropped = append(dropped, wanted)
+		}
+	}
+	return dropped
 }
 
 func (a *app) parameterString(ctx context.Context, parameterName string) (string, error) {

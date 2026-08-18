@@ -414,3 +414,36 @@ func TestDeliverDoesNotRetryClientErrorsOtherThanMissingThreads(t *testing.T) {
 		t.Fatalf("got %d attempts, want 1", len(fake.recorded()))
 	}
 }
+
+// A mention Discord accepts but does not resolve notifies nobody, while the
+// message still shows the mention text -- so the channel looks correct and the
+// recovery ping silently never happens. The way in is a server id in
+// MENTION_ROLE_ID: Discord gives the @everyone role the server's own id, it
+// renders as "@@everyone", and allowed_mentions.roles cannot enable it.
+func TestUndeliveredMentionsSpotsARoleDiscordIgnored(t *testing.T) {
+	current := testSettings()
+	current.mentionRoleID = "1517880825708941423"
+	entry := incident(update("u1", "investigating", 0))
+	payload := buildPayload(entry, entry.IncidentUpdates[0], true, current)
+
+	resolved := webhookMessage{ID: "m1", ChannelID: "t1", MentionRoles: []string{"1517880825708941423"}}
+	if got := undeliveredMentions(payload, resolved); len(got) != 0 {
+		t.Errorf("a role Discord echoed back should not be reported, got %v", got)
+	}
+
+	// Discord's answer for the @everyone role: accepted, mention_roles empty.
+	ignored := webhookMessage{ID: "m1", ChannelID: "t1"}
+	got := undeliveredMentions(payload, ignored)
+	if len(got) != 1 || got[0] != "1517880825708941423" {
+		t.Errorf("undeliveredMentions = %v, want the ignored role reported", got)
+	}
+}
+
+func TestUndeliveredMentionsIsQuietWhenNoMentionWasAskedFor(t *testing.T) {
+	entry := incident(update("u1", "monitoring", 0))
+	payload := buildPayload(entry, entry.IncidentUpdates[0], false, testSettings())
+
+	if got := undeliveredMentions(payload, webhookMessage{}); len(got) != 0 {
+		t.Errorf("a payload with no mention has nothing to report, got %v", got)
+	}
+}

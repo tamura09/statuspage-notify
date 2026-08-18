@@ -66,6 +66,11 @@ type embedFooter struct {
 type webhookMessage struct {
 	ID        string `json:"id"`
 	ChannelID string `json:"channel_id"`
+	// What Discord actually resolved the mention to. A role id that was asked
+	// for but does not come back here was not really mentioned, so nobody was
+	// notified -- see mentionWasDelivered.
+	MentionRoles    []string `json:"mention_roles"`
+	MentionEveryone bool     `json:"mention_everyone"`
 }
 
 // threadID reports the thread the message landed in. For a forum post created
