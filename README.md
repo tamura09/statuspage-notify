@@ -83,7 +83,8 @@ Setting it up:
 
 ## Behaviour
 
-- Reads `incidents.json` and `scheduled-maintenances.json`. Not `summary.json`:
+- Reads `incidents.json` and, unless `SKIP_SCHEDULED_MAINTENANCE` is set,
+  `scheduled-maintenances.json`. Not `summary.json`:
   that one carries only *unresolved* incidents, so an incident vanishes from it
   the moment it is resolved — precisely the update that must be delivered.
 - Updates are posted oldest first, so a thread reads in chronological order.
@@ -110,6 +111,7 @@ Environment variables, set by Terraform:
 | `STATE_KEY` | no | `statuspage/state.json` | Key of the state object. **Must differ per function** |
 | `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when a thread opens and when it resolves. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
 | `DISCORD_BOT_TOKEN_PARAMETER_NAME` | no | *(none)* | SSM parameter holding a bot token, used only to close a post when its incident resolves |
+| `SKIP_SCHEDULED_MAINTENANCE` | no | `false` | Skip the maintenance feed entirely. For pages that post a window per datacenter |
 | `MAX_UPDATE_AGE` | no | `24h` | Updates older than this are absorbed silently |
 | `STATE_RETENTION` | no | `720h` | How long an incident stays in the state object |
 

@@ -89,7 +89,12 @@ func (e statusEntry) updatesOldestFirst() []statusUpdate {
 // A failure on one feed does not discard the other. The caller still gets the
 // entries that were readable along with the error, so a maintenance feed
 // outage cannot block incident notifications.
-func fetchEntries(ctx context.Context, client *http.Client, baseURL string) ([]statusEntry, error) {
+//
+// includeMaintenance is false for pages whose maintenance feed is noise rather
+// than news: Cloudflare posts a scheduled window per datacenter, which was
+// eighteen entries in a day against five real incidents. The feed is not
+// fetched at all in that case, so there is nothing to leak through later.
+func fetchEntries(ctx context.Context, client *http.Client, baseURL string, includeMaintenance bool) ([]statusEntry, error) {
 	var entries []statusEntry
 	var problems []error
 
@@ -100,11 +105,13 @@ func fetchEntries(ctx context.Context, client *http.Client, baseURL string) ([]s
 		entries = append(entries, tagKind(incidents.Incidents, kindIncident)...)
 	}
 
-	maintenances, err := fetchFeed(ctx, client, baseURL, "scheduled-maintenances.json")
-	if err != nil {
-		problems = append(problems, fmt.Errorf("scheduled maintenances feed: %w", err))
-	} else {
-		entries = append(entries, tagKind(maintenances.ScheduledMaintenances, kindMaintenance)...)
+	if includeMaintenance {
+		maintenances, err := fetchFeed(ctx, client, baseURL, "scheduled-maintenances.json")
+		if err != nil {
+			problems = append(problems, fmt.Errorf("scheduled maintenances feed: %w", err))
+		} else {
+			entries = append(entries, tagKind(maintenances.ScheduledMaintenances, kindMaintenance)...)
+		}
 	}
 
 	// Oldest first, so that when several incidents are opened between two polls

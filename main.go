@@ -50,9 +50,12 @@ type settings struct {
 	stateBucket          string
 	stateKey             string
 	mentionRoleID        string
-	// Optional. Without it the thread title keeps whatever phase marker it was
-	// created with, because renaming a thread is the one operation a webhook
-	// cannot perform. Everything else works unchanged.
+	// Whether the page's scheduled-maintenance feed is worth reading. Off for
+	// pages that post a window per datacenter, where it drowns the incidents.
+	includeMaintenance bool
+	// Optional. Without it a resolved post is never closed, because closing is
+	// the one operation a webhook cannot perform. Everything else works
+	// unchanged.
 	botTokenParameterName string
 	maxUpdateAge          time.Duration
 	stateRetention        time.Duration
@@ -92,13 +95,13 @@ func (a *app) handle(ctx context.Context) error {
 
 	// Read before the run rather than lazily, so a misconfigured parameter is
 	// one log line at the top rather than a failure buried in the first
-	// resolution of the day. A missing token is not fatal: titles simply keep
-	// the marker they were created with.
+	// resolution of the day. A missing token is not fatal: posts simply stay
+	// open.
 	botToken := ""
 	if current.botTokenParameterName != "" {
 		botToken, err = a.parameterString(ctx, current.botTokenParameterName)
 		if err != nil {
-			log.Printf("read Discord bot token parameter: %v; thread titles will not be updated", err)
+			log.Printf("read Discord bot token parameter: %v; resolved posts will not be closed", err)
 			botToken = ""
 		}
 	}
@@ -108,7 +111,7 @@ func (a *app) handle(ctx context.Context) error {
 		return err
 	}
 
-	entries, fetchErr := fetchEntries(ctx, a.httpClient, current.baseURL)
+	entries, fetchErr := fetchEntries(ctx, a.httpClient, current.baseURL, current.includeMaintenance)
 
 	now := a.now()
 	posted, deliverErr := a.deliver(ctx, webhookURL, strings.TrimSpace(botToken), current, entries, state, now)
@@ -317,6 +320,7 @@ func loadSettings() (settings, error) {
 		stateBucket:           stateBucket,
 		stateKey:              envOr("STATE_KEY", defaultStateKey),
 		mentionRoleID:         strings.TrimSpace(os.Getenv("MENTION_ROLE_ID")),
+		includeMaintenance:    !boolEnv("SKIP_SCHEDULED_MAINTENANCE"),
 		botTokenParameterName: strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN_PARAMETER_NAME")),
 		maxUpdateAge:          maxUpdateAge,
 		stateRetention:        stateRetention,
@@ -348,6 +352,14 @@ func envOr(name, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func boolEnv(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "true", "1", "yes":
+		return true
+	}
+	return false
 }
 
 func durationEnv(name string, fallback time.Duration) (time.Duration, error) {

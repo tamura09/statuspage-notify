@@ -100,7 +100,7 @@ func statusServer(t *testing.T, incidentsStatus, maintenancesStatus int) *httpte
 func TestFetchEntriesMergesBothFeedsOldestFirst(t *testing.T) {
 	server := statusServer(t, http.StatusOK, http.StatusOK)
 
-	entries, err := fetchEntries(context.Background(), server.Client(), server.URL)
+	entries, err := fetchEntries(context.Background(), server.Client(), server.URL, true)
 	if err != nil {
 		t.Fatalf("fetchEntries: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestFetchEntriesMergesBothFeedsOldestFirst(t *testing.T) {
 func TestFetchEntriesKeepsTheReadableFeedWhenTheOtherFails(t *testing.T) {
 	server := statusServer(t, http.StatusOK, http.StatusInternalServerError)
 
-	entries, err := fetchEntries(context.Background(), server.Client(), server.URL)
+	entries, err := fetchEntries(context.Background(), server.Client(), server.URL, true)
 	if err == nil {
 		t.Fatal("fetchEntries should report the failed feed")
 	}
@@ -157,5 +157,35 @@ func TestUpdateTimePrefersDisplayAt(t *testing.T) {
 	}
 	if got := (statusUpdate{CreatedAt: created}).at(); !got.Equal(created) {
 		t.Errorf("at() = %s, want created_at %s when display_at is absent", got, created)
+	}
+}
+
+// Cloudflare posts a scheduled window per datacenter -- eighteen in a day
+// against five real incidents -- so a page can opt out of that feed entirely
+// rather than filtering it after the fact.
+func TestFetchEntriesCanSkipTheMaintenanceFeed(t *testing.T) {
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/incidents.json") {
+			_, _ = w.Write([]byte(incidentsFeed))
+			return
+		}
+		_, _ = w.Write([]byte(maintenancesFeed))
+	}))
+	t.Cleanup(server.Close)
+
+	entries, err := fetchEntries(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatalf("fetchEntries: %v", err)
+	}
+
+	for _, path := range requested {
+		if strings.Contains(path, "scheduled-maintenances") {
+			t.Errorf("the maintenance feed should not even be fetched, got a request for %s", path)
+		}
+	}
+	if len(entries) != 1 || entries[0].Kind != kindIncident {
+		t.Fatalf("got %d entries, want only the incident", len(entries))
 	}
 }
