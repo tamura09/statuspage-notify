@@ -150,7 +150,6 @@ func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current 
 			}
 
 			threadID := state.Entries[entry.ID].ThreadID
-			opening := threadID == ""
 			message, err := a.postUpdate(ctx, webhookURL, current, entry, update, threadID)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("post entry %s update %s: %w", entry.ID, update.ID, err))
@@ -168,14 +167,7 @@ func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current 
 			state.record(entry, update.ID, update.at())
 			posted++
 
-			if opening {
-				// The title was built with this phase when the thread was
-				// created, so recording it is enough -- renaming here would
-				// spend a rename saying what the title already says.
-				state.setTitlePhase(entry.ID, entryPhase(update))
-				continue
-			}
-			a.syncThreadTitle(ctx, botToken, current, entry, update, state)
+			a.syncThreadClosed(ctx, botToken, entry, update, state)
 		}
 	}
 
@@ -214,34 +206,43 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	return message, err
 }
 
-// syncThreadTitle keeps the phase marker in the thread's title honest.
+// syncThreadClosed closes a forum post once its incident resolves, and notes
+// when Discord has reopened one.
 //
-// It only calls Discord when the phase actually changed, because a rename is
-// rate limited to twice per ten minutes for a given thread while messages are
-// not -- an incident that walks investigating, identified, monitoring, resolved
-// would otherwise spend that whole budget writing the same red circle three
-// times before it had a green one to write.
+// Closing is what marks an incident done here, rather than a marker in the
+// title: an open post means something is still happening, which is the question
+// the forum's post list exists to answer.
 //
-// A failure here is logged and dropped rather than returned. The title is a
-// convenience for reading the channel list; the update itself has already been
-// posted, and failing the run over cosmetics would re-post nothing and hide the
-// real state behind an error.
-func (a *app) syncThreadTitle(ctx context.Context, botToken string, current settings, entry statusEntry, update statusUpdate, state *notifierState) {
+// Posting to an archived thread reopens it, so a postmortem arriving after the
+// resolution lands in the post and closes it again on the next terminal update.
+// That is also why the reopen is recorded rather than assumed: without it the
+// post would stay open, because the close call is only made on the transition.
+//
+// A failure here is logged and dropped rather than returned. The update itself
+// has already been posted, and failing the run over the post's open/closed state
+// would deliver nothing new while hiding the real state behind an error.
+func (a *app) syncThreadClosed(ctx context.Context, botToken string, entry statusEntry, update statusUpdate, state *notifierState) {
 	stored := state.Entries[entry.ID]
-	phase := entryPhase(update)
-	if botToken == "" || stored.ThreadID == "" || stored.TitlePhase == phase {
-		// Still record the phase when there is no token, so that adding one
-		// later does not rewrite every existing title at once.
-		state.setTitlePhase(entry.ID, phase)
+	if stored.ThreadID == "" {
 		return
 	}
 
-	title := threadTitle(entry, current.pageLabel, phase)
-	if err := a.renameThread(ctx, botToken, stored.ThreadID, title); err != nil {
-		log.Printf("rename thread %s for entry %s to %q: %v", stored.ThreadID, entry.ID, title, err)
+	if !isTerminal(update.Status) {
+		// This update reopened the post by being posted into it.
+		if stored.ThreadClosed {
+			state.setThreadClosed(entry.ID, false)
+		}
 		return
 	}
-	state.setTitlePhase(entry.ID, phase)
+
+	if botToken == "" {
+		return
+	}
+	if err := a.closeThread(ctx, botToken, stored.ThreadID); err != nil {
+		log.Printf("close thread %s for entry %s: %v", stored.ThreadID, entry.ID, err)
+		return
+	}
+	state.setThreadClosed(entry.ID, true)
 }
 
 // warnIfMentionDropped reports a mention that Discord accepted but did not

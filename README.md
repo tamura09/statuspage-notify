@@ -35,9 +35,9 @@ flooding the channel, all the updates for one incident go into one thread:
 
 | Statuspage | Discord |
 | --- | --- |
-| New incident or maintenance | New forum post (`thread_name`), titled `🔴 <page> · YYYY-MM-DD <incident name>` |
+| New incident or maintenance | New forum post (`thread_name`), titled `<page> · YYYY-MM-DD <incident name>` |
 | `identified`, `monitoring`, … | New message inside that thread |
-| `resolved` / `completed` | New message inside that thread, green, with the role mention — and the thread title flips to `🟢` |
+| `resolved` / `completed` | New message inside that thread, green, with the role mention — and the post is **closed** |
 
 A **forum** channel specifically, because a webhook cannot create a thread in a
 plain text channel — `thread_name` is only accepted on forum and media channels,
@@ -54,23 +54,26 @@ The forum channel must **not** have "Require members to select tags when posting
 enabled: this function sends no `applied_tags`, and Discord rejects the post with
 a 400 if the channel demands one.
 
-## The thread title marker needs a bot token
+## Closing a resolved post needs a bot token
 
-`🔴` → `🟢` is the one thing a webhook cannot do. `thread_name` is only accepted
-when the post is created, and renaming afterwards is `PATCH /channels/{id}`,
-which needs a real identity. So `DISCORD_BOT_TOKEN_PARAMETER_NAME` buys exactly
-one capability: rewriting the marker when an incident resolves. Every message is
-still posted through the webhook.
+An open post means something is still happening. That is the whole status
+indicator — there is no marker in the title, because the forum's post list
+already separates open from closed.
 
-Leave it unset and everything else works unchanged — threads simply keep the
-marker they opened with. The phase is recorded either way, so adding a token
-later does not rewrite the backlog.
+Closing is the one thing a webhook cannot do: `PATCH /channels/{id}` needs a real
+identity. So `DISCORD_BOT_TOKEN_PARAMETER_NAME` buys exactly one capability.
+Every message is still posted through the webhook.
 
-The rename fires only when the phase actually flips, never on the
+**Archived, never locked.** Statuspage can append a postmortem after the
+resolution, and posting to an archived thread reopens it by itself — so the late
+update lands, and the post closes again on the next terminal update. A locked
+post would reject it: a webhook carries no permission to post through a lock.
+
+Leave the token unset and everything else works unchanged; posts simply stay
+open. The close fires only on the transition to a terminal status, never on the
 investigating → identified → monitoring steps in between, because Discord rate
-limits a thread rename to twice per ten minutes while messages are far cheaper.
-A rename that fails is logged and dropped: the update itself has already been
-posted, and the marker is a convenience for reading the channel list.
+limits channel edits to twice per ten minutes per thread. A close that fails is
+logged and dropped, and left unrecorded so the next terminal update retries it.
 
 Setting it up:
 
@@ -106,7 +109,7 @@ Environment variables, set by Terraform:
 | `PAGE_LABEL` | no | *(none)* | Names the page in Discord: webhook username `<label> Status` and thread prefix. Unset degrades to `Status` with no prefix |
 | `STATE_KEY` | no | `statuspage/state.json` | Key of the state object. **Must differ per function** |
 | `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when a thread opens and when it resolves. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
-| `DISCORD_BOT_TOKEN_PARAMETER_NAME` | no | *(none)* | SSM parameter holding a bot token, used only to flip the thread title marker on resolution |
+| `DISCORD_BOT_TOKEN_PARAMETER_NAME` | no | *(none)* | SSM parameter holding a bot token, used only to close a post when its incident resolves |
 | `MAX_UPDATE_AGE` | no | `24h` | Updates older than this are absorbed silently |
 | `STATE_RETENTION` | no | `720h` | How long an incident stays in the state object |
 

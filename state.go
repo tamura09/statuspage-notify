@@ -30,11 +30,11 @@ type entryState struct {
 	Name          string    `json:"name"`
 	PostedUpdates []string  `json:"posted_update_ids"`
 	LastPostedAt  time.Time `json:"last_posted_at"`
-	// The phase the thread's title currently shows. Stored so the title is only
-	// rewritten when it actually changes: renaming a thread costs a Discord API
-	// call against a tight rate limit, and doing it on every update would spend
-	// that budget saying the same thing.
-	TitlePhase string `json:"title_phase,omitempty"`
+	// Whether the forum post is currently closed. Stored so the archive call is
+	// made once on resolution rather than on every later poll, and so a post
+	// Discord reopened -- which posting to an archived thread does by itself --
+	// is known to need closing again.
+	ThreadClosed bool `json:"thread_closed,omitempty"`
 }
 
 func newState() *notifierState {
@@ -68,9 +68,9 @@ func (s *notifierState) setThreadID(entryID, threadID string) {
 	s.Entries[entryID] = stored
 }
 
-func (s *notifierState) setTitlePhase(entryID, phase string) {
+func (s *notifierState) setThreadClosed(entryID string, closed bool) {
 	stored := s.Entries[entryID]
-	stored.TitlePhase = phase
+	stored.ThreadClosed = closed
 	s.Entries[entryID] = stored
 }
 

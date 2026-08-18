@@ -13,18 +13,22 @@ import (
 
 const discordAPIBase = "https://discord.com/api/v10"
 
-// renameThread rewrites a thread's title.
+// closeThread archives a forum post, which is what Discord's "Close Post" does.
 //
-// This is the one thing a webhook cannot do. thread_name is only accepted when
-// the post is created, and PATCH /channels/{id} needs a real identity, so the
-// running phase marker in a thread's title costs a bot token that nothing else
-// here needs. Everything else still goes through the webhook.
+// This is the one thing a webhook cannot do: PATCH /channels/{id} needs a real
+// identity, so closing a post costs a bot token that nothing else here needs.
+// Every message still goes through the webhook.
 //
-// Renames are rate limited far more tightly than messages -- two per ten minutes
-// for a given channel -- which is why the caller only does this when the phase
-// actually changes, not on every update.
-func (a *app) renameThread(ctx context.Context, botToken, threadID, title string) error {
-	body, err := json.Marshal(map[string]string{"name": title})
+// Archived, never locked. Statuspage can append a postmortem after the
+// resolution, and posting to an archived thread reopens it by itself, so an
+// archived post accepts that late update and is closed again. A locked one
+// would reject it: a webhook carries no permission to post through a lock.
+//
+// Channel edits are rate limited far more tightly than messages -- twice per ten
+// minutes for a given thread -- which is why the caller only does this on the
+// transition, not on every poll of an already-resolved incident.
+func (a *app) closeThread(ctx context.Context, botToken, threadID string) error {
+	body, err := json.Marshal(map[string]bool{"archived": true})
 	if err != nil {
 		return err
 	}
@@ -37,7 +41,7 @@ func (a *app) renameThread(ctx context.Context, botToken, threadID, title string
 
 	var lastErr error
 	for attempt := 1; attempt <= discordMaxAttempts; attempt++ {
-		retryAfter, err := a.renameThreadOnce(ctx, endpoint, botToken, body)
+		retryAfter, err := a.patchChannelOnce(ctx, endpoint, botToken, body)
 		if err == nil {
 			return nil
 		}
@@ -55,7 +59,7 @@ func (a *app) renameThread(ctx context.Context, botToken, threadID, title string
 	return lastErr
 }
 
-func (a *app) renameThreadOnce(ctx context.Context, endpoint, botToken string, body []byte) (time.Duration, error) {
+func (a *app) patchChannelOnce(ctx context.Context, endpoint, botToken string, body []byte) (time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, err

@@ -21,7 +21,7 @@ func TestBuildPayloadRendersTheUpdate(t *testing.T) {
 	if payload.Username != "Claude Status" {
 		t.Errorf("username = %q, want %q", payload.Username, "Claude Status")
 	}
-	if !strings.HasPrefix(payload.ThreadName, "\U0001F534 Claude · 2026-08-16 ") {
+	if !strings.HasPrefix(payload.ThreadName, "Claude · 2026-08-16 ") {
 		t.Errorf("thread name = %q, want it labelled and dated so entries from either page stay distinguishable", payload.ThreadName)
 	}
 	if !strings.Contains(payload.ThreadName, entry.Name) {
@@ -84,7 +84,7 @@ func TestBuildPayloadRendersMaintenanceWindows(t *testing.T) {
 
 	payload := buildPayload(entry, maintenanceUpdate, true, testSettings())
 
-	if !strings.HasPrefix(payload.ThreadName, "\U0001F534 Claude · 2026-08-15 Maintenance: ") {
+	if !strings.HasPrefix(payload.ThreadName, "Claude · 2026-08-15 Maintenance: ") {
 		t.Errorf("thread name = %q, want it marked as maintenance", payload.ThreadName)
 	}
 	if payload.Embeds[0].Color != colorMaintenance {
