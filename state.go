@@ -30,6 +30,11 @@ type entryState struct {
 	Name          string    `json:"name"`
 	PostedUpdates []string  `json:"posted_update_ids"`
 	LastPostedAt  time.Time `json:"last_posted_at"`
+	// The phase the thread's title currently shows. Stored so the title is only
+	// rewritten when it actually changes: renaming a thread costs a Discord API
+	// call against a tight rate limit, and doing it on every update would spend
+	// that budget saying the same thing.
+	TitlePhase string `json:"title_phase,omitempty"`
 }
 
 func newState() *notifierState {
@@ -60,6 +65,12 @@ func (s *notifierState) record(entry statusEntry, updateID string, at time.Time)
 func (s *notifierState) setThreadID(entryID, threadID string) {
 	stored := s.Entries[entryID]
 	stored.ThreadID = threadID
+	s.Entries[entryID] = stored
+}
+
+func (s *notifierState) setTitlePhase(entryID, phase string) {
+	stored := s.Entries[entryID]
+	stored.TitlePhase = phase
 	s.Entries[entryID] = stored
 }
 

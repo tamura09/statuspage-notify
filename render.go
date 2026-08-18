@@ -114,7 +114,10 @@ func buildPayload(entry statusEntry, update statusUpdate, openThread bool, curre
 		AllowedMentions: mentions,
 	}
 	if openThread {
-		payload.ThreadName = truncate(threadName(entry, current.pageLabel), discordThreadNameLimit)
+		// Phased from the update that opens the thread, not always red: when the
+		// updates before it fell outside MAX_UPDATE_AGE, the first one posted can
+		// be the resolution, and that thread should open green.
+		payload.ThreadName = threadTitle(entry, current.pageLabel, entryPhase(update))
 	}
 
 	return payload
@@ -202,6 +205,27 @@ func componentStatusLabel(status string) string {
 	return strings.ReplaceAll(status, "_", " ")
 }
 
+// The phases a thread title can show. Only two, because the question the forum's
+// post list has to answer at a glance is "is this still happening?" -- the finer
+// investigating/identified/monitoring distinction is inside the thread.
+const (
+	phaseFiring   = "firing"
+	phaseResolved = "resolved"
+)
+
+var phaseMarkers = map[string]string{
+	phaseFiring:   "\U0001F534",
+	phaseResolved: "\U0001F7E2",
+}
+
+// entryPhase is what the title should show after this update.
+func entryPhase(update statusUpdate) string {
+	if isTerminal(update.Status) {
+		return phaseResolved
+	}
+	return phaseFiring
+}
+
 func threadName(entry statusEntry, pageLabel string) string {
 	name := strings.TrimSpace(entry.Name)
 	if name == "" {
@@ -223,6 +247,20 @@ func threadName(entry statusEntry, pageLabel string) string {
 		name = pageLabel + " · " + name
 	}
 	return name
+}
+
+// threadTitle is threadName with the phase marker in front, which is the part a
+// reader scanning the forum's post list sees first.
+func threadTitle(entry statusEntry, pageLabel, phase string) string {
+	marker, ok := phaseMarkers[phase]
+	if !ok {
+		return truncate(threadName(entry, pageLabel), discordThreadNameLimit)
+	}
+	// The name is trimmed to leave room for the marker rather than the whole
+	// title being trimmed afterwards, because the marker is the one part that
+	// has to survive a long incident title.
+	name := truncate(threadName(entry, pageLabel), discordThreadNameLimit-len([]rune(marker))-1)
+	return marker + " " + name
 }
 
 // normalizeBody folds the CRLF line endings Statuspage sends and collapses the

@@ -34,6 +34,8 @@ type app struct {
 	objects    *s3.Client
 	httpClient *http.Client
 	now        func() time.Time
+	// Overridden only by tests. Empty means Discord's real API.
+	botAPIBase string
 }
 
 type settings struct {
@@ -48,8 +50,12 @@ type settings struct {
 	stateBucket          string
 	stateKey             string
 	mentionRoleID        string
-	maxUpdateAge         time.Duration
-	stateRetention       time.Duration
+	// Optional. Without it the thread title keeps whatever phase marker it was
+	// created with, because renaming a thread is the one operation a webhook
+	// cannot perform. Everything else works unchanged.
+	botTokenParameterName string
+	maxUpdateAge          time.Duration
+	stateRetention        time.Duration
 }
 
 func main() {
@@ -84,6 +90,19 @@ func (a *app) handle(ctx context.Context) error {
 		return fmt.Errorf("parse Discord webhook parameter: %w", err)
 	}
 
+	// Read before the run rather than lazily, so a misconfigured parameter is
+	// one log line at the top rather than a failure buried in the first
+	// resolution of the day. A missing token is not fatal: titles simply keep
+	// the marker they were created with.
+	botToken := ""
+	if current.botTokenParameterName != "" {
+		botToken, err = a.parameterString(ctx, current.botTokenParameterName)
+		if err != nil {
+			log.Printf("read Discord bot token parameter: %v; thread titles will not be updated", err)
+			botToken = ""
+		}
+	}
+
 	state, err := a.loadState(ctx, current.stateBucket, current.stateKey)
 	if err != nil {
 		return err
@@ -92,7 +111,7 @@ func (a *app) handle(ctx context.Context) error {
 	entries, fetchErr := fetchEntries(ctx, a.httpClient, current.baseURL)
 
 	now := a.now()
-	posted, deliverErr := a.deliver(ctx, webhookURL, current, entries, state, now)
+	posted, deliverErr := a.deliver(ctx, webhookURL, strings.TrimSpace(botToken), current, entries, state, now)
 	state.prune(now, current.stateRetention)
 
 	// Written even when delivery failed part way through, so the updates that
@@ -106,7 +125,7 @@ func (a *app) handle(ctx context.Context) error {
 
 // deliver posts every update that has not been posted yet, oldest first, into
 // the Discord thread belonging to its Statuspage entry.
-func (a *app) deliver(ctx context.Context, webhookURL string, current settings, entries []statusEntry, state *notifierState, now time.Time) (int, error) {
+func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current settings, entries []statusEntry, state *notifierState, now time.Time) (int, error) {
 	cutoff := now.Add(-current.maxUpdateAge)
 	posted := 0
 	var problems []error
@@ -131,6 +150,7 @@ func (a *app) deliver(ctx context.Context, webhookURL string, current settings, 
 			}
 
 			threadID := state.Entries[entry.ID].ThreadID
+			opening := threadID == ""
 			message, err := a.postUpdate(ctx, webhookURL, current, entry, update, threadID)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("post entry %s update %s: %w", entry.ID, update.ID, err))
@@ -147,6 +167,15 @@ func (a *app) deliver(ctx context.Context, webhookURL string, current settings, 
 			state.setThreadID(entry.ID, message.threadID())
 			state.record(entry, update.ID, update.at())
 			posted++
+
+			if opening {
+				// The title was built with this phase when the thread was
+				// created, so recording it is enough -- renaming here would
+				// spend a rename saying what the title already says.
+				state.setTitlePhase(entry.ID, entryPhase(update))
+				continue
+			}
+			a.syncThreadTitle(ctx, botToken, current, entry, update, state)
 		}
 	}
 
@@ -183,6 +212,36 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	warnIfMentionDropped(replacement, message, err)
 
 	return message, err
+}
+
+// syncThreadTitle keeps the phase marker in the thread's title honest.
+//
+// It only calls Discord when the phase actually changed, because a rename is
+// rate limited to twice per ten minutes for a given thread while messages are
+// not -- an incident that walks investigating, identified, monitoring, resolved
+// would otherwise spend that whole budget writing the same red circle three
+// times before it had a green one to write.
+//
+// A failure here is logged and dropped rather than returned. The title is a
+// convenience for reading the channel list; the update itself has already been
+// posted, and failing the run over cosmetics would re-post nothing and hide the
+// real state behind an error.
+func (a *app) syncThreadTitle(ctx context.Context, botToken string, current settings, entry statusEntry, update statusUpdate, state *notifierState) {
+	stored := state.Entries[entry.ID]
+	phase := entryPhase(update)
+	if botToken == "" || stored.ThreadID == "" || stored.TitlePhase == phase {
+		// Still record the phase when there is no token, so that adding one
+		// later does not rewrite every existing title at once.
+		state.setTitlePhase(entry.ID, phase)
+		return
+	}
+
+	title := threadTitle(entry, current.pageLabel, phase)
+	if err := a.renameThread(ctx, botToken, stored.ThreadID, title); err != nil {
+		log.Printf("rename thread %s for entry %s to %q: %v", stored.ThreadID, entry.ID, title, err)
+		return
+	}
+	state.setTitlePhase(entry.ID, phase)
 }
 
 // warnIfMentionDropped reports a mention that Discord accepted but did not
@@ -250,15 +309,16 @@ func loadSettings() (settings, error) {
 	baseURL := envOr("STATUS_PAGE_BASE_URL", defaultStatusPageBaseURL)
 
 	return settings{
-		baseURL:              baseURL,
-		pageLabel:            strings.TrimSpace(os.Getenv("PAGE_LABEL")),
-		pageHost:             pageHost(baseURL),
-		webhookParameterName: webhookParameterName,
-		stateBucket:          stateBucket,
-		stateKey:             envOr("STATE_KEY", defaultStateKey),
-		mentionRoleID:        strings.TrimSpace(os.Getenv("MENTION_ROLE_ID")),
-		maxUpdateAge:         maxUpdateAge,
-		stateRetention:       stateRetention,
+		baseURL:               baseURL,
+		pageLabel:             strings.TrimSpace(os.Getenv("PAGE_LABEL")),
+		pageHost:              pageHost(baseURL),
+		webhookParameterName:  webhookParameterName,
+		stateBucket:           stateBucket,
+		stateKey:              envOr("STATE_KEY", defaultStateKey),
+		mentionRoleID:         strings.TrimSpace(os.Getenv("MENTION_ROLE_ID")),
+		botTokenParameterName: strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN_PARAMETER_NAME")),
+		maxUpdateAge:          maxUpdateAge,
+		stateRetention:        stateRetention,
 	}, nil
 }
 

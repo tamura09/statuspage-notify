@@ -136,7 +136,7 @@ func TestDeliverOpensThreadThenFollowsUpInIt(t *testing.T) {
 		update("u1", "investigating", 0),
 	)
 
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{entry}, state, at(time.Hour))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{entry}, state, at(time.Hour))
 	if err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
@@ -186,11 +186,11 @@ func TestDeliverSkipsUpdatesAlreadyPosted(t *testing.T) {
 	entry := incident(update("u1", "investigating", 0))
 
 	instance := testApp(fake)
-	if _, err := instance.deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{entry}, state, at(time.Hour)); err != nil {
+	if _, err := instance.deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{entry}, state, at(time.Hour)); err != nil {
 		t.Fatalf("first deliver: %v", err)
 	}
 
-	posted, err := instance.deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{entry}, state, at(time.Hour))
+	posted, err := instance.deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{entry}, state, at(time.Hour))
 	if err != nil {
 		t.Fatalf("second deliver: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestDeliverSuppressesUpdatesOlderThanTheCutoff(t *testing.T) {
 		update("u2", "resolved", -71*time.Hour),
 	)
 
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{entry}, state, at(0))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{entry}, state, at(0))
 	if err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestDeliverOpensThreadFromTheFirstUpdateInsideTheCutoff(t *testing.T) {
 		update("u2", "monitoring", -time.Hour),
 	)
 
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{entry}, state, at(0))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{entry}, state, at(0))
 	if err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestDeliverMentionsTheRoleOnOpenAndOnResolution(t *testing.T) {
 		update("u3", "resolved", 20*time.Minute),
 	)
 
-	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, current, []statusEntry{entry}, state, at(time.Hour)); err != nil {
+	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", current, []statusEntry{entry}, state, at(time.Hour)); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 
@@ -322,7 +322,7 @@ func TestDeliverStopsAnEntryAtItsFirstFailureButContinuesWithTheNext(t *testing.
 	}
 
 	state := newState()
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{first, second}, state, at(time.Hour))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{first, second}, state, at(time.Hour))
 	if err == nil {
 		t.Fatal("deliver should report the failed post")
 	}
@@ -352,7 +352,7 @@ func TestPostWebhookRetriesServerErrors(t *testing.T) {
 	}
 
 	state := newState()
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{incident(update("u1", "investigating", 0))}, state, at(time.Hour))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{incident(update("u1", "investigating", 0))}, state, at(time.Hour))
 	if err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestDeliverReopensAThreadThatIsGone(t *testing.T) {
 	state := newState()
 	state.Entries["inc-1"] = entryState{ThreadID: "thread-1", Name: "Service disruption on Claude services"}
 
-	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{incident(update("u1", "monitoring", 0))}, state, at(time.Hour))
+	posted, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{incident(update("u1", "monitoring", 0))}, state, at(time.Hour))
 	if err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestDeliverDoesNotRetryClientErrorsOtherThanMissingThreads(t *testing.T) {
 	}
 
 	state := newState()
-	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, testSettings(), []statusEntry{incident(update("u1", "investigating", 0))}, state, at(time.Hour)); err == nil {
+	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", testSettings(), []statusEntry{incident(update("u1", "investigating", 0))}, state, at(time.Hour)); err == nil {
 		t.Fatal("deliver should report the rejection")
 	}
 	if len(fake.recorded()) != 1 {
