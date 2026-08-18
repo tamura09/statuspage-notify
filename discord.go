@@ -24,6 +24,13 @@ const (
 
 	discordMaxAttempts = 3
 	discordMaxBackoff  = 5 * time.Second
+
+	// Discord's REST API requires a User-Agent in this shape, and its WAF
+	// answers a missing or generic one with a Cloudflare 1010 -- an HTML-ish
+	// "error code: 1010" body rather than a Discord error, so it does not even
+	// look like Discord rejecting the call. Go's default Go-http-client/1.1 is
+	// exactly the kind of value that gets caught.
+	discordUserAgent = "DiscordBot (https://github.com/tamura09/statuspage-notify, 1.0)"
 )
 
 type webhookPayload struct {
@@ -150,6 +157,7 @@ func (a *app) postWebhookOnce(ctx context.Context, endpoint string, body []byte)
 		return webhookMessage{}, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", discordUserAgent)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {

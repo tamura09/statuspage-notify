@@ -66,6 +66,7 @@ func (a *app) patchChannelOnce(ctx context.Context, endpoint, botToken string, b
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bot "+botToken)
+	req.Header.Set("User-Agent", discordUserAgent)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {

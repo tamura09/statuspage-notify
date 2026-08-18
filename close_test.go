@@ -13,10 +13,11 @@ import (
 )
 
 type recordedPatch struct {
-	ThreadID string
-	Archived bool
-	Locked   bool
-	Auth     string
+	ThreadID  string
+	Archived  bool
+	Locked    bool
+	Auth      string
+	UserAgent string
 }
 
 // fakeBotAPI stands in for PATCH /channels/{id}, the one call a webhook cannot
@@ -45,10 +46,11 @@ func newFakeBotAPI(t *testing.T) *fakeBotAPI {
 
 		fake.mutex.Lock()
 		fake.patches = append(fake.patches, recordedPatch{
-			ThreadID: strings.TrimPrefix(r.URL.Path, "/channels/"),
-			Archived: payload.Archived,
-			Locked:   payload.Locked,
-			Auth:     r.Header.Get("Authorization"),
+			ThreadID:  strings.TrimPrefix(r.URL.Path, "/channels/"),
+			Archived:  payload.Archived,
+			Locked:    payload.Locked,
+			Auth:      r.Header.Get("Authorization"),
+			UserAgent: r.Header.Get("User-Agent"),
 		})
 		status := fake.status
 		fake.mutex.Unlock()
@@ -88,6 +90,11 @@ func TestCloseThreadArchivesWithoutLocking(t *testing.T) {
 	}
 	if !got[0].Archived {
 		t.Error("the post should be archived")
+	}
+	// Without this Discord's WAF answers a Cloudflare 1010 -- which no local
+	// test server would ever reproduce, so it is asserted here instead.
+	if got[0].UserAgent != discordUserAgent {
+		t.Errorf("User-Agent = %q, want %q", got[0].UserAgent, discordUserAgent)
 	}
 	// Locking would reject a postmortem posted after the resolution, because a
 	// webhook has no permission to post through a lock. Archiving alone reopens
