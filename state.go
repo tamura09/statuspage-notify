@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"time"
 
@@ -42,12 +43,7 @@ func newState() *notifierState {
 }
 
 func (s *notifierState) hasPosted(entryID, updateID string) bool {
-	for _, posted := range s.Entries[entryID].PostedUpdates {
-		if posted == updateID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.Entries[entryID].PostedUpdates, updateID)
 }
 
 func (s *notifierState) record(entry statusEntry, updateID string, at time.Time) {
