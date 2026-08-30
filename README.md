@@ -19,6 +19,7 @@ thread prefix, taken from `PAGE_LABEL`:
 | `cloudflare-status-notify` | cloudflarestatus.com | **Cloudflare Status** |
 | `nature-status-notify` | nature.statuspage.io | **Nature Remo Status** |
 | `mercari-status-notify` | status.mercari.com | **Mercari Status** |
+| `proton-status-notify` | status.proton.me | **Proton Status** |
 
 `provided.al2023` / `arm64`, us-east-1, run every minute by EventBridge.
 
