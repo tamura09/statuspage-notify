@@ -35,6 +35,7 @@ env:
     cloudflare-status-notify
     nature-status-notify
     mercari-status-notify
+    proton-status-notify
 
 jobs:
   test:
