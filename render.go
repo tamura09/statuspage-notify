@@ -34,10 +34,11 @@ var statusLabels = map[string]string{
 }
 
 // terminalStatuses are the ones that close an entry out. They get the green
-// embed and, when one is configured, the role mention -- because an edit never
-// notifies anyone on Discord and a follow-up inside a thread only reaches
-// members who already joined it, so without a mention the "it is fixed" message
-// is the one nobody sees.
+// embed and, for an incident with a role configured, the mention -- because an
+// edit never notifies anyone on Discord and a follow-up inside a thread only
+// reaches members who already joined it, so without a mention the "it is fixed"
+// message is the one nobody sees. See shouldMention for why maintenance is left
+// out of that.
 var terminalStatuses = map[string]bool{
 	"resolved":   true,
 	"postmortem": true,
@@ -57,6 +58,24 @@ func statusLabel(status string) string {
 
 func isTerminal(status string) bool {
 	return terminalStatuses[strings.ToLower(strings.TrimSpace(status))]
+}
+
+// shouldMention decides whether this message carries the role mention. Only the
+// post that opens a thread and the one that closes the entry out do, so the
+// updates in between stay quiet -- and scheduled maintenance never does at all.
+//
+// Maintenance is announced days ahead and runs to a plan; nobody has to react
+// to it the way an incident demands. Pinging a role for a window that was
+// always going to happen is what trains people to ignore the ping, which then
+// costs them the incident notification the mention exists for.
+func shouldMention(entry statusEntry, update statusUpdate, openThread bool, current settings) bool {
+	if current.mentionRoleID == "" {
+		return false
+	}
+	if entry.Kind == kindMaintenance {
+		return false
+	}
+	return openThread || isTerminal(update.Status)
 }
 
 func embedColor(entry statusEntry, update statusUpdate) int {
@@ -90,7 +109,7 @@ func buildPayload(entry statusEntry, update statusUpdate, openThread bool, curre
 	// status and the entry name rather than leaving them buried in the embed.
 	content := fmt.Sprintf("**%s** — %s", label, entry.Name)
 	mentions := allowedMentions{Parse: []string{}}
-	if current.mentionRoleID != "" && (openThread || isTerminal(update.Status)) {
+	if shouldMention(entry, update, openThread, current) {
 		content = fmt.Sprintf("<@&%s> %s", current.mentionRoleID, content)
 		mentions.Roles = []string{current.mentionRoleID}
 	}
