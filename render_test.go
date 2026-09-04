@@ -96,6 +96,42 @@ func TestBuildPayloadRendersMaintenanceWindows(t *testing.T) {
 	}
 }
 
+// Maintenance is scheduled ahead and runs to a plan, so it never mentions the
+// role -- not when its thread opens and not when it completes. An incident in
+// the same channel does, and that contrast is the whole point: a ping has to
+// mean something is wrong.
+func TestBuildPayloadNeverMentionsForMaintenance(t *testing.T) {
+	start := at(0)
+	entry := statusEntry{
+		ID:           "mnt-1",
+		Name:         "Scheduled database maintenance",
+		Impact:       "maintenance",
+		CreatedAt:    at(-24 * time.Hour),
+		ScheduledFor: &start,
+		Kind:         kindMaintenance,
+	}
+
+	mentioning := testSettings()
+	mentioning.mentionRoleID = "123"
+
+	for _, status := range []string{"scheduled", "completed"} {
+		payload := buildPayload(entry, update("u1", status, 0), status == "scheduled", mentioning)
+
+		if strings.Contains(payload.Content, "<@&123>") {
+			t.Errorf("%s content = %q, want no role mention", status, payload.Content)
+		}
+		if len(payload.AllowedMentions.Roles) != 0 {
+			t.Errorf("%s allowed_mentions.roles = %v, want empty", status, payload.AllowedMentions.Roles)
+		}
+	}
+
+	incidentEntry := incident(update("u1", "resolved", 0))
+	resolved := buildPayload(incidentEntry, incidentEntry.IncidentUpdates[0], false, mentioning)
+	if !strings.Contains(resolved.Content, "<@&123>") {
+		t.Errorf("resolved incident content = %q, want the role mention", resolved.Content)
+	}
+}
+
 func TestBuildPayloadContentLeadsWithStatusAndName(t *testing.T) {
 	entry := incident(update("u1", "monitoring", 0))
 

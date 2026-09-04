@@ -40,6 +40,12 @@ flooding the channel, all the updates for one incident go into one thread:
 | `identified`, `monitoring`, … | New message inside that thread |
 | `resolved` / `completed` | New message inside that thread, green, with the role mention — and the post is **closed** |
 
+Scheduled maintenance is the exception: its thread and its `completed` update
+carry no mention. A window announced days ahead needs nobody to react to it, and
+pinging a role for something that was always going to happen is what teaches
+people to ignore the ping — which then costs them the incident notification the
+mention exists for.
+
 A **forum** channel specifically, because a webhook cannot create a thread in a
 plain text channel — `thread_name` is only accepted on forum and media channels,
 and `POST /channels/{id}/messages/{id}/threads` needs a bot token. Posting into an
@@ -48,8 +54,9 @@ existing thread (`?thread_id=`) works either way and un-archives it automaticall
 Follow-ups inside a thread only notify members who already joined it, and nobody
 has joined a thread a webhook created seconds earlier — so `MENTION_ROLE_ID` is
 what makes the recovery notification actually arrive. It is applied to the
-thread-opening post and to the terminal update, and nothing else, so the updates
-in between stay quiet.
+thread-opening post and to the terminal update of an **incident**, and nothing
+else, so the updates in between — and scheduled maintenance throughout — stay
+quiet.
 
 The forum channel must **not** have "Require members to select tags when posting"
 enabled: this function sends no `applied_tags`, and Discord rejects the post with
@@ -110,7 +117,7 @@ Environment variables, set by Terraform:
 | `STATUS_PAGE_BASE_URL` | no | Claude's page | Statuspage API root, e.g. `https://www.githubstatus.com/api/v2` |
 | `PAGE_LABEL` | no | *(none)* | Names the page in Discord: webhook username `<label> Status` and thread prefix. Unset degrades to `Status` with no prefix |
 | `STATE_KEY` | no | `statuspage/state.json` | Key of the state object. **Must differ per function** |
-| `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when a thread opens and when it resolves. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
+| `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when an incident thread opens and when it resolves. Never for scheduled maintenance. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
 | `DISCORD_BOT_TOKEN_PARAMETER_NAME` | no | *(none)* | SSM parameter holding a bot token, used only to close a post when its incident resolves |
 | `SKIP_SCHEDULED_MAINTENANCE` | no | `false` | Skip the maintenance feed entirely. For pages that post a window per datacenter |
 | `MAX_UPDATE_AGE` | no | `24h` | Updates older than this are absorbed silently |
