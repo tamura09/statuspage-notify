@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -27,15 +28,42 @@ const (
 	defaultStateKey          = "statuspage/state.json"
 	defaultMaxUpdateAge      = 24 * time.Hour
 	defaultStateRetention    = 30 * 24 * time.Hour
+
+	// parameterCacheTTL bounds how stale a cached parameter may be. Every run
+	// reads the webhook parameter, and each read decrypts a SecureString; at
+	// one run a minute across nine deployments those decryptions were the
+	// whole KMS bill. Lambda reuses the execution environment between runs, so
+	// caching here removes almost all of them, and an hour is well inside the
+	// time it takes to roll a webhook out anyway.
+	parameterCacheTTL = time.Hour
 )
 
+// parameterReader is the slice of the SSM API this function uses. Narrowed to
+// an interface so the cache can be exercised without an AWS client.
+type parameterReader interface {
+	GetParameter(context.Context, *ssm.GetParameterInput, ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
+}
+
+// cachedParameter is a parameter value together with the time it was read, so
+// parameterString can tell whether it has outlived parameterCacheTTL.
+type cachedParameter struct {
+	value  string
+	readAt time.Time
+}
+
 type app struct {
-	parameters *ssm.Client
+	parameters parameterReader
 	objects    *s3.Client
 	httpClient *http.Client
 	now        func() time.Time
 	// Overridden only by tests. Empty means Discord's real API.
 	botAPIBase string
+
+	// Survives between invocations, because Lambda reuses the execution
+	// environment. Guarded because nothing promises that reuse is
+	// single-threaded.
+	parameterMutex sync.Mutex
+	parameterCache map[string]cachedParameter
 }
 
 type settings struct {
@@ -281,15 +309,53 @@ func undeliveredMentions(payload webhookPayload, message webhookMessage) []strin
 }
 
 func (a *app) parameterString(ctx context.Context, parameterName string) (string, error) {
+	if value, ok := a.cachedParameterValue(parameterName); ok {
+		return value, nil
+	}
+
 	withDecryption := true
 	out, err := a.parameters.GetParameter(ctx, &ssm.GetParameterInput{Name: &parameterName, WithDecryption: &withDecryption})
 	if err != nil {
 		return "", err
 	}
-	if out.Parameter != nil && out.Parameter.Value != nil {
-		return *out.Parameter.Value, nil
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", errors.New("parameter has no value")
 	}
-	return "", errors.New("parameter has no value")
+
+	a.cacheParameterValue(parameterName, *out.Parameter.Value)
+	return *out.Parameter.Value, nil
+}
+
+// cachedParameterValue returns the cached value of parameterName while it is
+// younger than parameterCacheTTL. Only successful reads are cached: a failure
+// should be retried on the next run rather than remembered for an hour.
+func (a *app) cachedParameterValue(parameterName string) (string, bool) {
+	a.parameterMutex.Lock()
+	defer a.parameterMutex.Unlock()
+
+	entry, ok := a.parameterCache[parameterName]
+	if !ok || a.clock().Sub(entry.readAt) >= parameterCacheTTL {
+		return "", false
+	}
+	return entry.value, true
+}
+
+func (a *app) cacheParameterValue(parameterName, value string) {
+	a.parameterMutex.Lock()
+	defer a.parameterMutex.Unlock()
+
+	if a.parameterCache == nil {
+		a.parameterCache = map[string]cachedParameter{}
+	}
+	a.parameterCache[parameterName] = cachedParameter{value: value, readAt: a.clock()}
+}
+
+// clock is now, or the real clock for the tests that build an app without one.
+func (a *app) clock() time.Time {
+	if a.now == nil {
+		return time.Now()
+	}
+	return a.now()
 }
 
 func loadSettings() (settings, error) {
