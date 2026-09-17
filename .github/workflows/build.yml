@@ -36,6 +36,7 @@ env:
     nature-status-notify
     mercari-status-notify
     proton-status-notify
+    discord-status-notify
 
 jobs:
   test:
