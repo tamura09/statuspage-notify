@@ -190,7 +190,9 @@ go test ./...
 ## CI/CD
 
 [.github/workflows/build.yml](.github/workflows/build.yml) vets and tests on pull
-requests and on pushes to `main`. On push to `main` it also builds the `bootstrap`
+requests only; `Test` is a required check, so nothing reaches `main` without
+passing it. On push to `main` (and on `workflow_dispatch` from `main`) it builds
+the `bootstrap`
 binary, zips it, uploads it to
 `s3://aws-terraform-lambda-artifacts-<account_id>-us-east-1/lambda/statuspage-notify.zip`
 and calls `aws lambda update-function-code` for every function in `FUNCTION_NAMES`.
