@@ -1,6 +1,7 @@
 # statuspage-notify
 
-Polls an [Atlassian Statuspage](https://www.atlassian.com/software/statuspage) and
+Polls an [Atlassian Statuspage](https://www.atlassian.com/software/statuspage) — or a
+[StatusIQ](https://www.site24x7.com/statusiq/) page, which is what Zoho runs — and
 reports every incident and scheduled maintenance into a Discord **forum** channel,
 one thread per incident.
 
@@ -21,6 +22,8 @@ thread prefix, taken from `PAGE_LABEL`:
 | `mercari-status-notify` | status.mercari.com | **Mercari Status** |
 | `proton-status-notify` | status.proton.me | **Proton Status** |
 | `discord-status-notify` | discordstatus.com | **Discord Status** |
+| `zoho-jp-status-notify` | jp.zohostatus.com (StatusIQ) | **Zoho JP Status** |
+| `zoho-us-status-notify` | us.zohostatus.com (StatusIQ) | **Zoho US Status** |
 
 `provided.al2023` / `arm64`, us-east-1, run every minute by EventBridge.
 
@@ -107,6 +110,33 @@ Setting it up:
   replaced rather than wedging the incident forever.
 - 429 and 5xx are retried in process, honouring Discord's `retry_after`.
 
+## StatusIQ pages
+
+StatusIQ has no public JSON API — `/api/v2/incidents.json` on a StatusIQ host
+answers with the HTML page. With `STATUS_PAGE_SOURCE=statusiq` the function
+instead reads the front page, which renders the last seven days of incidents
+server side, each with its full update history and ISO 8601 timestamps in
+`data-date` attributes. One GET a minute, no per-incident requests.
+
+What differs from a Statuspage source:
+
+- **Updates have no ids.** One is derived from the update's state, time and
+  text, so an update edited after posting is posted again as a new message.
+- **Most incidents are automatic.** StatusIQ opens a "Real-time Incident" when a
+  Site24x7 monitor goes down and resolves it when it comes back, often within a
+  few minutes. They read `Acknowledged` → `Resolved`.
+- **Impact comes from the severity class.** Major Outage → critical, Partial
+  Outage → major, Degraded Performance → minor.
+- **Only names of affected components.** StatusIQ does not say what each one
+  moved from and to, so the field is a plain list.
+- **The markup is not a contract.** If the incident history section disappears
+  the run fails rather than reporting an empty page as "no incidents".
+- **An open incident is also shown above the component list**, in markup that
+  has not been seen yet because it only appears during an incident. The parser
+  scans the whole page for anything that opens an incident and has update rows
+  next to it, so either copy is picked up; until a real one is observed, treat
+  the first live Zoho incident as the test of that path.
+
 ## Configuration
 
 Environment variables, set by Terraform:
@@ -115,7 +145,8 @@ Environment variables, set by Terraform:
 | --- | --- | --- | --- |
 | `DISCORD_WEBHOOK_PARAMETER_NAME` | yes | — | SSM parameter holding the forum channel's webhook URL |
 | `STATE_BUCKET` | yes | — | S3 bucket for the state object |
-| `STATUS_PAGE_BASE_URL` | no | Claude's page | Statuspage API root, e.g. `https://www.githubstatus.com/api/v2` |
+| `STATUS_PAGE_SOURCE` | no | `statuspage` | `statuspage` (Atlassian JSON API) or `statusiq` (StatusIQ HTML) |
+| `STATUS_PAGE_BASE_URL` | no | Claude's page | Statuspage API root, e.g. `https://www.githubstatus.com/api/v2`; for StatusIQ the page itself, e.g. `https://jp.zohostatus.com` |
 | `PAGE_LABEL` | no | *(none)* | Names the page in Discord: webhook username `<label> Status` and thread prefix. Unset degrades to `Status` with no prefix |
 | `STATE_KEY` | no | `statuspage/state.json` | Key of the state object. **Must differ per function** |
 | `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when an incident thread opens and when it resolves. Never for scheduled maintenance. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
@@ -133,7 +164,9 @@ and every member of it can see it — so they sit in the environment.
 ## Adding another status page
 
 Check it is an Atlassian Statuspage first — `curl -sf <page>/api/v2/incidents.json`
-is the whole test. Then:
+is the whole test. If that returns HTML titled `StatusIQ` instead, it is a
+StatusIQ page: use the page root as the base URL and set `source = "statusiq"`.
+Then:
 
 1. Add an entry to `statuspage_notify_pages` in `aws-terraform`'s root
    `locals.tf` (label and API base URL). Everything else — function, role, log

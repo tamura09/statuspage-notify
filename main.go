@@ -25,6 +25,8 @@ const (
 	// Claude deployment pointing at the right page during the window between a
 	// code push and the apply that sets the variable.
 	defaultStatusPageBaseURL = "https://status.claude.com/api/v2"
+	sourceStatuspage         = "statuspage"
+	sourceStatusIQ           = "statusiq"
 	defaultStateKey          = "statuspage/state.json"
 	defaultMaxUpdateAge      = 24 * time.Hour
 	defaultStateRetention    = 30 * 24 * time.Hour
@@ -67,6 +69,9 @@ type app struct {
 }
 
 type settings struct {
+	// source picks the parser: "statuspage" for Atlassian Statuspage's JSON
+	// API, "statusiq" for the HTML of a StatusIQ (Site24x7) page.
+	source  string
 	baseURL string
 	// pageLabel names the status page in Discord -- the webhook username and
 	// the thread title prefix. Empty is allowed and degrades to an unlabelled
@@ -139,7 +144,14 @@ func (a *app) handle(ctx context.Context) error {
 		return err
 	}
 
-	entries, fetchErr := fetchEntries(ctx, a.httpClient, current.baseURL, current.includeMaintenance)
+	var entries []statusEntry
+	var fetchErr error
+	switch current.source {
+	case sourceStatusIQ:
+		entries, fetchErr = fetchStatusIQEntries(ctx, a.httpClient, current.baseURL, current.includeMaintenance)
+	default:
+		entries, fetchErr = fetchEntries(ctx, a.httpClient, current.baseURL, current.includeMaintenance)
+	}
 
 	now := a.now()
 	posted, deliverErr := a.deliver(ctx, webhookURL, strings.TrimSpace(botToken), current, entries, state, now)
@@ -378,7 +390,13 @@ func loadSettings() (settings, error) {
 
 	baseURL := envOr("STATUS_PAGE_BASE_URL", defaultStatusPageBaseURL)
 
+	source := strings.ToLower(envOr("STATUS_PAGE_SOURCE", sourceStatuspage))
+	if source != sourceStatuspage && source != sourceStatusIQ {
+		return settings{}, fmt.Errorf("STATUS_PAGE_SOURCE must be %q or %q, got %q", sourceStatuspage, sourceStatusIQ, source)
+	}
+
 	return settings{
+		source:                source,
 		baseURL:               baseURL,
 		pageLabel:             strings.TrimSpace(os.Getenv("PAGE_LABEL")),
 		pageHost:              pageHost(baseURL),
