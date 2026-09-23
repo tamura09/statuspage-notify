@@ -21,9 +21,11 @@ const (
 
 var statusLabels = map[string]string{
 	// Incident lifecycle.
+	"acknowledged":  "Acknowledged",
 	"investigating": "Investigating",
 	"identified":    "Identified",
 	"monitoring":    "Monitoring",
+	"observing":     "Observing",
 	"resolved":      "Resolved",
 	"postmortem":    "Postmortem",
 	// Scheduled maintenance lifecycle.
