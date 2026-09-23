@@ -71,9 +71,16 @@ func isTerminal(status string) bool {
 // always going to happen is what trains people to ignore the ping, which then
 // costs them the incident notification the mention exists for.
 //
-// A minor incident is left quiet for the same reason. The impact is read as it
-// stands when each update is posted, so an incident escalated past minor gets
-// the mention on its resolution even if it opened without one.
+// A minor incident is left quiet for the same reason. Statuspage keeps no
+// history of an incident's impact, only its current value, so this reads the
+// impact as of the poll that delivers the update. Two consequences:
+//
+//   - An incident escalated past minor is mentioned on its resolution even if
+//     it opened without one.
+//   - One that already pinged keeps its resolution ping after being lowered to
+//     minor, because entry.Mentioned remembers the first one. Only an incident
+//     that opens, is downgraded and resolves between two polls -- so that it is
+//     never seen above minor at all -- goes out without any mention.
 func shouldMention(entry statusEntry, update statusUpdate, openThread bool, current settings) bool {
 	if current.mentionRoleID == "" {
 		return false
@@ -81,7 +88,7 @@ func shouldMention(entry statusEntry, update statusUpdate, openThread bool, curr
 	if entry.Kind == kindMaintenance {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(entry.Impact), "minor") {
+	if strings.EqualFold(strings.TrimSpace(entry.Impact), "minor") && !entry.Mentioned {
 		return false
 	}
 	return openThread || isTerminal(update.Status)

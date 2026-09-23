@@ -36,6 +36,10 @@ type entryState struct {
 	// Discord reopened -- which posting to an archived thread does by itself --
 	// is known to need closing again.
 	ThreadClosed bool `json:"thread_closed,omitempty"`
+	// Whether the role has been mentioned for this entry. Kept so an incident
+	// that pinged when it opened pings again when it resolves, even if its
+	// impact has since been lowered to minor.
+	Mentioned bool `json:"mentioned,omitempty"`
 }
 
 func newState() *notifierState {
@@ -67,6 +71,12 @@ func (s *notifierState) setThreadID(entryID, threadID string) {
 func (s *notifierState) setThreadClosed(entryID string, closed bool) {
 	stored := s.Entries[entryID]
 	stored.ThreadClosed = closed
+	s.Entries[entryID] = stored
+}
+
+func (s *notifierState) setMentioned(entryID string) {
+	stored := s.Entries[entryID]
+	stored.Mentioned = true
 	s.Entries[entryID] = stored
 }
 

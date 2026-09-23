@@ -51,8 +51,12 @@ people to ignore the ping — which then costs them the incident notification th
 mention exists for.
 
 Incidents whose impact is **minor** get no mention either, for the same reason.
-The impact is read when each update is posted, so an incident that escalates
-past minor is mentioned on its resolution even if it opened quietly.
+Statuspage only exposes an incident's current impact, so it is read as of the
+poll that delivers each update. An incident that escalates past minor is
+mentioned on its resolution even if it opened quietly, and one that pinged when
+it opened keeps its resolution ping after being lowered to minor (the state
+object remembers the first mention). Only an incident that opens, is downgraded
+and resolves between two polls goes out without any mention.
 
 A **forum** channel specifically, because a webhook cannot create a thread in a
 plain text channel — `thread_name` is only accepted on forum and media channels,

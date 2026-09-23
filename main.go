@@ -193,7 +193,8 @@ func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current 
 			}
 
 			threadID := state.Entries[entry.ID].ThreadID
-			message, err := a.postUpdate(ctx, webhookURL, current, entry, update, threadID)
+			entry.Mentioned = state.Entries[entry.ID].Mentioned
+			message, mentioned, err := a.postUpdate(ctx, webhookURL, current, entry, update, threadID)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("post entry %s update %s: %w", entry.ID, update.ID, err))
 				// Stop at the first failure for this entry: continuing would
@@ -208,6 +209,9 @@ func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current 
 			// to be reopened.
 			state.setThreadID(entry.ID, message.threadID())
 			state.record(entry, update.ID, update.at())
+			if mentioned {
+				state.setMentioned(entry.ID)
+			}
 			posted++
 
 			a.syncThreadClosed(ctx, botToken, entry, update, state)
@@ -217,19 +221,21 @@ func (a *app) deliver(ctx context.Context, webhookURL, botToken string, current 
 	return posted, joinErrors(problems)
 }
 
-func (a *app) postUpdate(ctx context.Context, webhookURL string, current settings, entry statusEntry, update statusUpdate, threadID string) (webhookMessage, error) {
+// postUpdate reports, alongside the message, whether the payload asked for the
+// role mention, so the caller can remember that the entry has pinged.
+func (a *app) postUpdate(ctx context.Context, webhookURL string, current settings, entry statusEntry, update statusUpdate, threadID string) (webhookMessage, bool, error) {
 	if threadID == "" {
 		payload := buildPayload(entry, update, true, current)
 		message, err := a.postWebhook(ctx, webhookURL, "", payload)
 		warnIfMentionDropped(payload, message, err)
-		return message, err
+		return message, len(payload.AllowedMentions.Roles) > 0, err
 	}
 
 	payload := buildPayload(entry, update, false, current)
 	message, err := a.postWebhook(ctx, webhookURL, threadID, payload)
 	if err == nil {
 		warnIfMentionDropped(payload, message, nil)
-		return message, nil
+		return message, len(payload.AllowedMentions.Roles) > 0, nil
 	}
 
 	// A thread deleted in Discord answers 404 for good, which would wedge this
@@ -238,7 +244,7 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	// failure mode.
 	var failure *discordError
 	if !errors.As(err, &failure) || failure.StatusCode != http.StatusNotFound {
-		return webhookMessage{}, err
+		return webhookMessage{}, false, err
 	}
 	log.Printf("thread %s for entry %s is gone; opening a replacement", threadID, entry.ID)
 
@@ -246,7 +252,7 @@ func (a *app) postUpdate(ctx context.Context, webhookURL string, current setting
 	message, err = a.postWebhook(ctx, webhookURL, "", replacement)
 	warnIfMentionDropped(replacement, message, err)
 
-	return message, err
+	return message, len(replacement.AllowedMentions.Roles) > 0, err
 }
 
 // syncThreadClosed closes a forum post once its incident resolves, and notes
