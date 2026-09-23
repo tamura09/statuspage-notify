@@ -33,7 +33,7 @@ env:
   AWS_ROLE_TO_ASSUME: "arn:aws:iam::222165754930:role/github-actions-lambda-artifacts"
   ARTIFACT_NAME: statuspage-notify
   # One artifact, one Lambda function per status page being watched. Terraform
-  # in tamura09/aws-terraform creates the functions and points them all at the
+  # in tamura09/terraform creates the functions and points them all at the
   # single S3 object below; each is told which page to poll through its own
   # environment. Adding a page here without adding it there fails the deploy on
   # ResourceNotFoundException, which is the intended order: Terraform first.
@@ -48,6 +48,8 @@ env:
     mercari-status-notify
     proton-status-notify
     discord-status-notify
+    zoho-jp-status-notify
+    zoho-us-status-notify
 
 jobs:
   test:
