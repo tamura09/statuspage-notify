@@ -132,6 +132,31 @@ func TestBuildPayloadNeverMentionsForMaintenance(t *testing.T) {
 	}
 }
 
+// A minor incident posts like any other but pings nobody, on open or on
+// resolution. Anything above minor keeps the mention.
+func TestBuildPayloadNeverMentionsForMinorIncidents(t *testing.T) {
+	mentioning := testSettings()
+	mentioning.mentionRoleID = "123"
+
+	minor := incident(update("u1", "investigating", 0), update("u2", "resolved", time.Hour))
+	minor.Impact = "minor"
+	for index, openThread := range []bool{true, false} {
+		payload := buildPayload(minor, minor.IncidentUpdates[index], openThread, mentioning)
+		if strings.Contains(payload.Content, "<@&123>") || len(payload.AllowedMentions.Roles) != 0 {
+			t.Errorf("minor %s content = %q, roles = %v, want no mention", minor.IncidentUpdates[index].Status, payload.Content, payload.AllowedMentions.Roles)
+		}
+	}
+
+	for _, impact := range []string{"major", "critical", "none", ""} {
+		entry := incident(update("u1", "investigating", 0))
+		entry.Impact = impact
+		payload := buildPayload(entry, entry.IncidentUpdates[0], true, mentioning)
+		if !strings.Contains(payload.Content, "<@&123>") {
+			t.Errorf("impact %q content = %q, want the role mention", impact, payload.Content)
+		}
+	}
+}
+
 func TestBuildPayloadContentLeadsWithStatusAndName(t *testing.T) {
 	entry := incident(update("u1", "monitoring", 0))
 

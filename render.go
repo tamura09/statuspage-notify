@@ -70,11 +70,18 @@ func isTerminal(status string) bool {
 // to it the way an incident demands. Pinging a role for a window that was
 // always going to happen is what trains people to ignore the ping, which then
 // costs them the incident notification the mention exists for.
+//
+// A minor incident is left quiet for the same reason. The impact is read as it
+// stands when each update is posted, so an incident escalated past minor gets
+// the mention on its resolution even if it opened without one.
 func shouldMention(entry statusEntry, update statusUpdate, openThread bool, current settings) bool {
 	if current.mentionRoleID == "" {
 		return false
 	}
 	if entry.Kind == kindMaintenance {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(entry.Impact), "minor") {
 		return false
 	}
 	return openThread || isTerminal(update.Status)
