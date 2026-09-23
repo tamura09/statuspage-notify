@@ -48,6 +48,8 @@ env:
     mercari-status-notify
     proton-status-notify
     discord-status-notify
+    zoho-jp-status-notify
+    zoho-us-status-notify
 
 jobs:
   test:

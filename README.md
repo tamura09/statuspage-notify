@@ -6,7 +6,7 @@ reports every incident and scheduled maintenance into a Discord **forum** channe
 one thread per incident.
 
 One binary, one Lambda function per page being watched, all deployed from
-[tamura09/aws-terraform](https://github.com/tamura09/aws-terraform) into the same
+[tamura09/terraform](https://github.com/tamura09/terraform) into the same
 Discord forum channel. Each identifies itself there by its webhook username and
 thread prefix, taken from `PAGE_LABEL`:
 
@@ -168,8 +168,8 @@ is the whole test. If that returns HTML titled `StatusIQ` instead, it is a
 StatusIQ page: use the page root as the base URL and set `source = "statusiq"`.
 Then:
 
-1. Add an entry to `statuspage_notify_pages` in `aws-terraform`'s root
-   `locals.tf` (label and API base URL). Everything else — function, role, log
+1. Add an entry to `statuspage_notify_pages` in `tamura09/terraform`'s
+   `aws/global/locals.tf` (label and API base URL). Everything else — function, role, log
    group, EventBridge rule, IAM policies, deploy permission — is generated from
    it. Apply.
 2. Add `<key>-status-notify` to `FUNCTION_NAMES` in
@@ -198,6 +198,6 @@ binary, zips it, uploads it to
 and calls `aws lambda update-function-code` for every function in `FUNCTION_NAMES`.
 
 AWS calls authenticate via GitHub OIDC, assuming the
-`github-actions-lambda-artifacts` role defined in `tamura09/aws-terraform`.
+`github-actions-lambda-artifacts` role defined in `tamura09/terraform`.
 Terraform still owns the AWS resources; this repository owns only the function
 source and its build pipeline.
