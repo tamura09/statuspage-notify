@@ -121,3 +121,34 @@ func TestDurationEnvRejectsNonPositiveValues(t *testing.T) {
 		t.Errorf("got %s, want the default %s", got, defaultMaxUpdateAge)
 	}
 }
+
+func TestMigrateStateMarksVersionOneThreadsAsMentioned(t *testing.T) {
+	state := &notifierState{Version: 1, Entries: map[string]entryState{
+		"posted":   {ThreadID: "thread-1"},
+		"absorbed": {PostedUpdates: []string{"u1"}},
+	}}
+
+	migrateState(state)
+
+	if state.Version != stateVersion {
+		t.Errorf("Version = %d, want %d", state.Version, stateVersion)
+	}
+	if !state.Entries["posted"].Mentioned {
+		t.Error("a version 1 entry with a thread opened with a mention and should be marked so")
+	}
+	if state.Entries["absorbed"].Mentioned {
+		t.Error("an entry that never got a thread never mentioned anyone")
+	}
+}
+
+func TestMigrateStateLeavesCurrentEntriesAlone(t *testing.T) {
+	state := &notifierState{Version: stateVersion, Entries: map[string]entryState{
+		"quiet": {ThreadID: "thread-1"},
+	}}
+
+	migrateState(state)
+
+	if state.Entries["quiet"].Mentioned {
+		t.Error("a current-version entry without the flag opened quietly and must stay unmentioned")
+	}
+}
