@@ -16,7 +16,8 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-const stateVersion = 1
+// Version 2 added entryState.Mentioned; see migrateState.
+const stateVersion = 2
 
 // notifierState is what makes a poller idempotent: which Discord thread belongs
 // to which Statuspage entry, and which of that entry's updates have already
@@ -36,6 +37,10 @@ type entryState struct {
 	// Discord reopened -- which posting to an archived thread does by itself --
 	// is known to need closing again.
 	ThreadClosed bool `json:"thread_closed,omitempty"`
+	// Whether the role has been mentioned for this entry. Kept so an incident
+	// that pinged when it opened pings again when it resolves, even if its
+	// impact has since been lowered to minor.
+	Mentioned bool `json:"mentioned,omitempty"`
 }
 
 func newState() *notifierState {
@@ -67,6 +72,12 @@ func (s *notifierState) setThreadID(entryID, threadID string) {
 func (s *notifierState) setThreadClosed(entryID string, closed bool) {
 	stored := s.Entries[entryID]
 	stored.ThreadClosed = closed
+	s.Entries[entryID] = stored
+}
+
+func (s *notifierState) setMentioned(entryID string) {
+	stored := s.Entries[entryID]
+	stored.Mentioned = true
 	s.Entries[entryID] = stored
 }
 
@@ -116,9 +127,28 @@ func (a *app) loadState(ctx context.Context, bucket, key string) (*notifierState
 	if state.Entries == nil {
 		state.Entries = map[string]entryState{}
 	}
-	state.Version = stateVersion
+	migrateState(state)
 
 	return state, nil
+}
+
+// migrateState brings an older state object up to stateVersion.
+//
+// Version 1 predates Mentioned. Every thread it opened carried the role
+// mention, because nothing was exempt from it apart from maintenance -- which
+// never mentions whatever this flag says. So a version 1 entry with a thread is
+// one that pinged, and marking it so keeps the resolution ping for an incident
+// that was open across the deploy and gets lowered to minor before it ends.
+func migrateState(state *notifierState) {
+	if state.Version < 2 {
+		for id, stored := range state.Entries {
+			if stored.ThreadID != "" {
+				stored.Mentioned = true
+				state.Entries[id] = stored
+			}
+		}
+	}
+	state.Version = stateVersion
 }
 
 func (a *app) saveState(ctx context.Context, bucket, key string, state *notifierState) error {

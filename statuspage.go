@@ -41,6 +41,10 @@ type statusEntry struct {
 	// serves incidents and maintenances through the same shape and nothing in
 	// the payload itself distinguishes them.
 	Kind entryKind `json:"-"`
+
+	// Set by deliver from the stored state, not by any feed: whether this
+	// entry's role mention has already gone out.
+	Mentioned bool `json:"-"`
 }
 
 type statusUpdate struct {

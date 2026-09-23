@@ -447,3 +447,61 @@ func TestUndeliveredMentionsIsQuietWhenNoMentionWasAskedFor(t *testing.T) {
 		t.Errorf("a payload with no mention has nothing to report, got %v", got)
 	}
 }
+
+// An incident that pinged when it opened keeps its resolution ping after being
+// lowered to minor: the people who were told it started need to hear it ended.
+func TestDeliverMentionsTheResolutionOfAnIncidentDowngradedToMinor(t *testing.T) {
+	fake := newFakeDiscord(t)
+	state := newState()
+	current := testSettings()
+	current.mentionRoleID = "987654321"
+
+	opened := incident(update("u1", "investigating", 0))
+	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", current, []statusEntry{opened}, state, at(time.Hour)); err != nil {
+		t.Fatalf("first deliver: %v", err)
+	}
+	if !state.Entries[opened.ID].Mentioned {
+		t.Fatal("the opening mention should be recorded")
+	}
+
+	downgraded := incident(update("u1", "investigating", 0), update("u2", "resolved", 20*time.Minute))
+	downgraded.Impact = "minor"
+	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", current, []statusEntry{downgraded}, state, at(time.Hour)); err != nil {
+		t.Fatalf("second deliver: %v", err)
+	}
+
+	posts := fake.recorded()
+	if len(posts) != 2 {
+		t.Fatalf("got %d posts, want 2", len(posts))
+	}
+	if !strings.Contains(posts[1].Payload.Content, "<@&987654321>") {
+		t.Errorf("resolution content = %q, want the role mention", posts[1].Payload.Content)
+	}
+}
+
+// Minor from start to finish: posted, threaded and never pinged.
+func TestDeliverNeverMentionsAMinorIncident(t *testing.T) {
+	fake := newFakeDiscord(t)
+	state := newState()
+	current := testSettings()
+	current.mentionRoleID = "987654321"
+
+	entry := incident(update("u1", "investigating", 0), update("u2", "resolved", 20*time.Minute))
+	entry.Impact = "minor"
+	if _, err := testApp(fake).deliver(context.Background(), fake.server.URL, "", current, []statusEntry{entry}, state, at(time.Hour)); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+
+	posts := fake.recorded()
+	if len(posts) != 2 {
+		t.Fatalf("got %d posts, want 2", len(posts))
+	}
+	for index, post := range posts {
+		if strings.Contains(post.Payload.Content, "<@&") || len(post.Payload.AllowedMentions.Roles) != 0 {
+			t.Errorf("post %d content = %q, want no mention", index, post.Payload.Content)
+		}
+	}
+	if state.Entries[entry.ID].Mentioned {
+		t.Error("a minor incident should not be recorded as mentioned")
+	}
+}

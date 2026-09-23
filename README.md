@@ -50,6 +50,14 @@ pinging a role for something that was always going to happen is what teaches
 people to ignore the ping — which then costs them the incident notification the
 mention exists for.
 
+Incidents whose impact is **minor** get no mention either, for the same reason.
+Statuspage only exposes an incident's current impact, so it is read as of the
+poll that delivers each update. An incident that escalates past minor is
+mentioned on its resolution even if it opened quietly, and one that pinged when
+it opened keeps its resolution ping after being lowered to minor (the state
+object remembers the first mention). Only an incident that opens, is downgraded
+and resolves between two polls goes out without any mention.
+
 A **forum** channel specifically, because a webhook cannot create a thread in a
 plain text channel — `thread_name` is only accepted on forum and media channels,
 and `POST /channels/{id}/messages/{id}/threads` needs a bot token. Posting into an
@@ -149,7 +157,7 @@ Environment variables, set by Terraform:
 | `STATUS_PAGE_BASE_URL` | no | Claude's page | Statuspage API root, e.g. `https://www.githubstatus.com/api/v2`; for StatusIQ the page itself, e.g. `https://jp.zohostatus.com` |
 | `PAGE_LABEL` | no | *(none)* | Names the page in Discord: webhook username `<label> Status` and thread prefix. Unset degrades to `Status` with no prefix |
 | `STATE_KEY` | no | `statuspage/state.json` | Key of the state object. **Must differ per function** |
-| `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when an incident thread opens and when it resolves. Never for scheduled maintenance. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
+| `MENTION_ROLE_ID` | no | *(none)* | Discord **role** id mentioned when an incident thread opens and when it resolves. Never for scheduled maintenance or minor-impact incidents. Not the server id — that is the `@everyone` role, which renders as `@@everyone` and notifies nobody |
 | `DISCORD_BOT_TOKEN_PARAMETER_NAME` | no | *(none)* | SSM parameter holding a bot token, used only to close a post when its incident resolves |
 | `SKIP_SCHEDULED_MAINTENANCE` | no | `false` | Skip the maintenance feed entirely. For pages that post a window per datacenter |
 | `MAX_UPDATE_AGE` | no | `24h` | Updates older than this are absorbed silently |
