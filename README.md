@@ -206,6 +206,6 @@ binary, zips it, uploads it to
 and calls `aws lambda update-function-code` for every function in `FUNCTION_NAMES`.
 
 AWS calls authenticate via GitHub OIDC, assuming the
-`github-actions-lambda-artifacts` role defined in `tamura09/terraform`.
+`github-actions-lambda-deploy-statuspage-notify` role defined in `tamura09/terraform`.
 Terraform still owns the AWS resources; this repository owns only the function
 source and its build pipeline.
