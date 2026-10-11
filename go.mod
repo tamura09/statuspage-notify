@@ -2,13 +2,15 @@ module github.com/tamura09/statuspage-notify
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.1
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.79.1
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.61.0
 )
 
 require (
