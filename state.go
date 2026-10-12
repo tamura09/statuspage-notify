@@ -151,7 +151,9 @@ func migrateState(state *notifierState) {
 	state.Version = stateVersion
 }
 
-func (a *app) saveState(ctx context.Context, bucket, key string, state *notifierState) error {
+// encodeState is the exact body saveState writes, so that two states which
+// encode the same can be treated as the same object.
+func encodeState(state *notifierState) ([]byte, error) {
 	// Sorted keys keep the stored object stable between runs that changed
 	// nothing, which makes its version history readable.
 	ids := make([]string, 0, len(state.Entries))
@@ -166,7 +168,21 @@ func (a *app) saveState(ctx context.Context, bucket, key string, state *notifier
 
 	body, err := json.MarshalIndent(&notifierState{Version: state.Version, Entries: ordered}, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode state: %w", err)
+		return nil, fmt.Errorf("encode state: %w", err)
+	}
+	return body, nil
+}
+
+// saveState writes the state unless it encodes to previous. Nearly every run
+// changes nothing, and at one run a minute per page an unconditional write was
+// the bulk of the account's S3 request charges.
+func (a *app) saveState(ctx context.Context, bucket, key string, state *notifierState, previous []byte) error {
+	body, err := encodeState(state)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(body, previous) {
+		return nil
 	}
 
 	if _, err := a.objects.PutObject(ctx, &s3.PutObjectInput{

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -150,5 +151,47 @@ func TestMigrateStateLeavesCurrentEntriesAlone(t *testing.T) {
 
 	if state.Entries["quiet"].Mentioned {
 		t.Error("a current-version entry without the flag opened quietly and must stay unmentioned")
+	}
+}
+
+func TestEncodeStateIsStableAcrossALoadAndPrune(t *testing.T) {
+	state := newState()
+	state.setThreadID("inc-1", "thread-1")
+	state.record(incident(update("u1", "investigating", 0)), "u1", at(0))
+	second := incident(update("u2", "investigating", 0))
+	second.ID = "inc-2"
+	state.setThreadID("inc-2", "thread-2")
+	state.record(second, "u2", at(0))
+
+	stored, err := encodeState(state)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	reloaded := newState()
+	if err := json.Unmarshal(stored, reloaded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	loaded, err := encodeState(reloaded)
+	if err != nil {
+		t.Fatalf("encode reloaded: %v", err)
+	}
+	reloaded.prune(at(0), time.Hour)
+	after, err := encodeState(reloaded)
+	if err != nil {
+		t.Fatalf("encode after prune: %v", err)
+	}
+
+	if !bytes.Equal(stored, loaded) || !bytes.Equal(loaded, after) {
+		t.Errorf("a run that changed nothing encodes differently, so it would be written:\n%s\n%s", loaded, after)
+	}
+
+	reloaded.setThreadClosed("inc-1", true)
+	changed, err := encodeState(reloaded)
+	if err != nil {
+		t.Fatalf("encode changed: %v", err)
+	}
+	if bytes.Equal(loaded, changed) {
+		t.Error("a changed state encodes the same as before, so it would not be written")
 	}
 }
