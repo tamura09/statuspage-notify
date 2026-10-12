@@ -143,6 +143,10 @@ func (a *app) handle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	loaded, err := encodeState(state)
+	if err != nil {
+		return err
+	}
 
 	var entries []statusEntry
 	var fetchErr error
@@ -159,7 +163,7 @@ func (a *app) handle(ctx context.Context) error {
 
 	// Written even when delivery failed part way through, so the updates that
 	// did reach Discord are not posted a second time on the next run.
-	saveErr := a.saveState(ctx, current.stateBucket, current.stateKey, state)
+	saveErr := a.saveState(ctx, current.stateBucket, current.stateKey, state, loaded)
 
 	log.Printf("checked %d entries, posted %d updates", len(entries), posted)
 
