@@ -17,9 +17,10 @@ on:
       - main
   workflow_dispatch:
 
+# id-token is granted to Deploy alone. Test runs a pull request's code, and
+# that code has no business minting the OIDC token the deploy role trusts.
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -81,6 +82,9 @@ jobs:
 
   deploy:
     name: Deploy
+    permissions:
+      contents: read
+      id-token: write
     # No needs: test. Test is skipped outside pull requests, and a skipped
     # dependency would skip this job too. workflow_dispatch on main redeploys
     # without a code change.
