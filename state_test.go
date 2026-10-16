@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -97,12 +98,18 @@ func TestParseWebhookURLAcceptsTheShapesSSMMightHold(t *testing.T) {
 	}
 
 	for name, raw := range map[string]string{
-		"empty":     "   ",
-		"not https": "http://discord.com/api/webhooks/1/token",
-		"not a URL": "webhooks/1/token",
+		"empty":      "   ",
+		"not https":  "http://discord.com/api/webhooks/1/token",
+		"not a URL":  "webhooks/1/token",
+		"unparsable": "https://discord.com/api/webhooks/1/token%zz",
 	} {
-		if _, err := parseWebhookURL(raw); err == nil {
+		_, err := parseWebhookURL(raw)
+		if err == nil {
 			t.Errorf("%s should have been rejected", name)
+			continue
+		}
+		if strings.Contains(err.Error(), "/token") {
+			t.Errorf("%s: error %q contains the webhook token", name, err)
 		}
 	}
 }
