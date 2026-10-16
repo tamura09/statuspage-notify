@@ -364,6 +364,21 @@ func TestPostWebhookRetriesServerErrors(t *testing.T) {
 	}
 }
 
+func TestPostWebhookKeepsTheURLOutOfTransportErrors(t *testing.T) {
+	fake := newFakeDiscord(t)
+	client := testApp(fake)
+	webhookURL := fake.server.URL + "/api/webhooks/1/secret-token"
+	fake.server.Close()
+
+	_, err := client.postWebhook(context.Background(), webhookURL, "", webhookPayload{})
+	if err == nil {
+		t.Fatal("postWebhook succeeded against a closed server")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Errorf("error %q contains the webhook token", err)
+	}
+}
+
 // A thread deleted in Discord answers 404 forever; the entry has to recover by
 // opening a replacement rather than wedging.
 func TestDeliverReopensAThreadThatIsGone(t *testing.T) {

@@ -115,7 +115,7 @@ func (e *discordError) Error() string {
 func (a *app) postWebhook(ctx context.Context, webhookURL, threadID string, payload webhookPayload) (webhookMessage, error) {
 	endpoint, err := url.Parse(webhookURL)
 	if err != nil {
-		return webhookMessage{}, err
+		return webhookMessage{}, withoutURL(err)
 	}
 	query := endpoint.Query()
 	query.Set("wait", "true")
@@ -154,14 +154,14 @@ func (a *app) postWebhook(ctx context.Context, webhookURL, threadID string, payl
 func (a *app) postWebhookOnce(ctx context.Context, endpoint string, body []byte) (webhookMessage, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return webhookMessage{}, 0, err
+		return webhookMessage{}, 0, withoutURL(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", discordUserAgent)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return webhookMessage{}, 0, err
+		return webhookMessage{}, 0, withoutURL(err)
 	}
 	defer resp.Body.Close()
 
@@ -228,10 +228,21 @@ func parseWebhookURL(raw string) (string, error) {
 func validateWebhookURL(raw string) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", err
+		return "", withoutURL(err)
 	}
 	if parsed.Scheme != "https" || parsed.Host == "" {
 		return "", errors.New("webhook URL must be an absolute https URL")
 	}
 	return raw, nil
+}
+
+// withoutURL drops the URL that net/http and net/url put into their errors. A
+// webhook URL carries its token in the path, so the error would otherwise
+// write the credential into CloudWatch Logs.
+func withoutURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s webhook: %w", urlErr.Op, urlErr.Err)
+	}
+	return err
 }
